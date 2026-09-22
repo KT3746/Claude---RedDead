@@ -35,16 +35,40 @@ const lightCanvas = document.createElement('canvas');
 const lctx = lightCanvas.getContext('2d');
 let VW = 0, VH = 0, DPR = 1, ZOOM = 1.5;
 
+// Modo toque (celular / tablet)
+const TOUCH = { on: false, joy: null };
+let MM_R = 78; // raio do minimapa
+
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  DPR = Math.min(window.devicePixelRatio || 1, TOUCH.on ? 1.5 : 2);
   VW = window.innerWidth; VH = window.innerHeight;
   canvas.width = Math.floor(VW * DPR); canvas.height = Math.floor(VH * DPR);
   canvas.style.width = VW + 'px'; canvas.style.height = VH + 'px';
   lightCanvas.width = Math.ceil(VW / 2); lightCanvas.height = Math.ceil(VH / 2);
-  ZOOM = clamp(Math.min(VW, VH) / 520, 1.0, 1.8);
+  if (TOUCH.on) {
+    ZOOM = clamp(Math.min(VW, VH) / 430, 0.8, 1.8);
+    MM_R = Math.round(clamp(Math.min(VW, VH) * 0.12, 38, 60));
+    // espaço ocupado pelo minimapa + núcleos no canto superior esquerdo
+    document.body.style.setProperty('--mmh', (12 + MM_R * 2 + 46) + 'px');
+    document.body.style.setProperty('--mmw', (12 + MM_R * 2 + 12) + 'px');
+  } else {
+    ZOOM = clamp(Math.min(VW, VH) / 520, 1.0, 1.8);
+    MM_R = Math.min(78, VW * 0.14);
+  }
 }
 window.addEventListener('resize', resize);
 resize();
+
+function enableTouchMode() {
+  if (TOUCH.on) return;
+  TOUCH.on = true;
+  document.body.classList.add('touch');
+  const btn = document.getElementById('startBtn');
+  if (btn) btn.textContent = 'Toque para começar';
+  resize();
+}
+if (window.matchMedia && (matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches))) enableTouchMode();
+window.addEventListener('touchstart', enableTouchMode, { once: true, passive: true });
 
 // ---------------------------------------------------------------------
 // Mundo
@@ -130,7 +154,7 @@ addProp('barrel', 2640, 1030); addProp('barrel', 2380, 1390);
 
 // Curral atrás do estábulo
 const CORRAL = { x: 960, y: 1680, w: 360, h: 200 };
-function fenceRect(x, y, w, h) { solids.push({ x, y, w, h }); props.push({ type: 'fence', x, y, w, h }); }
+function fenceRect(x, y, w, h) { solids.push({ x, y, w, h, fence: true }); props.push({ type: 'fence', x, y, w, h }); }
 fenceRect(CORRAL.x, CORRAL.y, CORRAL.w, 6);
 fenceRect(CORRAL.x, CORRAL.y + CORRAL.h, CORRAL.w, 6);
 fenceRect(CORRAL.x, CORRAL.y, 6, CORRAL.h);
@@ -371,8 +395,9 @@ function moveEnt(e, dx, dy, r) {
   if (dy && !collides(e.x, e.y + dy, r)) { e.y += dy; moved = true; }
   return moved;
 }
+// Balas passam entre as tábuas das cercas
 function solidAt(x, y) {
-  for (const s of solids) if (x > s.x && x < s.x + s.w && y > s.y && y < s.y + s.h) return s;
+  for (const s of solids) if (!s.fence && x > s.x && x < s.x + s.w && y > s.y && y < s.y + s.h) return s;
   return null;
 }
 
@@ -516,7 +541,7 @@ function renderPrompts(list) {
   const key = list.map((p) => p.key + p.label).join('|');
   if (key === lastPrompts) return;
   lastPrompts = key;
-  $('prompts').innerHTML = list.map((p) => `<div class="prompt">${p.label} <span class="key">${p.key}</span></div>`).join('');
+  $('prompts').innerHTML = list.map((p) => `<div class="prompt" data-key="Key${p.key}">${p.label} <span class="key">${p.key}</span></div>`).join('');
 }
 
 // ---------------------------------------------------------------------
@@ -524,12 +549,13 @@ function renderPrompts(list) {
 // ---------------------------------------------------------------------
 function openMenu(title, sub, options) {
   G.menu = { title, sub, options, sel: 0 };
+  document.body.classList.add('ui-open');
   while (G.menu.sel < options.length && options[G.menu.sel].disabled) G.menu.sel++;
   if (G.menu.sel >= options.length) G.menu.sel = 0;
   renderMenu();
   $('menu').classList.remove('hidden');
 }
-function closeMenu() { G.menu = null; $('menu').classList.add('hidden'); }
+function closeMenu() { G.menu = null; $('menu').classList.add('hidden'); document.body.classList.toggle('ui-open', G.invOpen); }
 function renderMenu() {
   const m = G.menu;
   if (!m) return;
@@ -618,7 +644,7 @@ function buildingMenu(b) {
         return [
           { label: 'Feijão enlatado', desc: `Comida. Use [C] para comer. Você tem ${G.food}.`, price: 0.75, fn: () => { G.food++; toast('Comprado', 'Feijão enlatado +1'); return { options: opts() }; } },
           { label: 'Munição de revólver (12)', desc: `Você tem ${G.reserve} balas de reserva.`, price: 1, fn: () => { G.reserve += 12; toast('Comprado', 'Munição +12'); return { options: opts() }; } },
-          { label: 'Tônico Olho Morto', desc: `Enche o núcleo de Olho Morto. Você tem ${G.tonic}.`, price: 2, fn: () => { G.tonic++; toast('Comprado', 'Tônico +1 (use no Alforje com [Tab])'); return { options: opts() }; } },
+          { label: 'Tônico Olho Morto', desc: `Enche o núcleo de Olho Morto. Você tem ${G.tonic}.`, price: 2, fn: () => { G.tonic++; toast('Comprado', TOUCH.on ? 'Tônico +1 (use no Alforje 🎒)' : 'Tônico +1 (use no Alforje com [Tab])'); return { options: opts() }; } },
           { label: 'Cenoura para o cavalo', desc: 'Aumenta o vínculo com seu cavalo.', price: 0.25, fn: () => { G.carrots = (G.carrots || 0) + 1; toast('Comprado', 'Cenoura +1'); return { options: opts() }; } },
           { label: `Vender ervas (${hc})`, desc: 'Ervas coletadas nos arredores. $0.40 cada.', disabled: hc === 0, fn: () => {
             earn(hc * 0.4); G.herbs = {}; toast('Vendido', `Você vendeu ${hc} ervas por ${fmtMoney(hc * 0.4)}.`, 'gold'); return { options: opts() };
@@ -831,13 +857,71 @@ function startGame() {
   if (G.started) return;
   G.started = true;
   initAudio();
+  if (AC && AC.state === 'suspended') AC.resume();
+  if (TOUCH.on) {
+    const el = document.documentElement;
+    try { const p = el.requestFullscreen && el.requestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* sem tela cheia */ }
+  }
   $('title').classList.add('hidden');
   $('hud').classList.remove('hidden');
   banner('VALE ESPERANÇA', 'Novo Hanover · 1899');
-  setTimeout(() => toast('Bem-vindo, forasteiro', 'Explore a cidade. Aproxime-se das portas e pessoas e use [E].'), 1500);
-  setTimeout(() => toast('Dica', 'Seu cavalo Tempestade está em frente ao estábulo. Pressione [H] para chamá-lo.'), 6000);
+  setTimeout(() => toast('Bem-vindo, forasteiro', TOUCH.on ? 'Explore a cidade. Chegue perto de portas e pessoas e toque nos botões que aparecem.' : 'Explore a cidade. Aproxime-se das portas e pessoas e use [E].'), 1500);
+  setTimeout(() => toast('Dica', TOUCH.on ? 'Seu cavalo Tempestade está em frente ao estábulo. Toque em "Assobiar" para chamá-lo.' : 'Seu cavalo Tempestade está em frente ao estábulo. Pressione [H] para chamá-lo.'), 6000);
   setTimeout(() => toast('Dica', 'O Xerife tem trabalhos de caçador de recompensas.'), 11000);
 }
+
+// ---------------------------------------------------------------------
+// Controles de toque
+// ---------------------------------------------------------------------
+const JOY_MAX = 55;
+function showJoy() {
+  const j = TOUCH.joy, base = $('joy'), knob = $('joyKnob');
+  if (!j) { base.classList.remove('active'); base.style.left = ''; base.style.top = ''; knob.style.transform = ''; return; }
+  base.classList.add('active');
+  base.style.left = j.ox + 'px'; base.style.top = j.oy + 'px';
+  knob.style.transform = `translate(${j.vx * j.mag * JOY_MAX}px, ${j.vy * j.mag * JOY_MAX}px)`;
+}
+function moveJoy(t) {
+  const j = TOUCH.joy;
+  let dx = t.clientX - j.ox, dy = t.clientY - j.oy;
+  const len = Math.hypot(dx, dy);
+  if (len > JOY_MAX * 1.3) { // a base acompanha o dedo
+    j.ox = t.clientX - (dx / len) * JOY_MAX * 1.3; j.oy = t.clientY - (dy / len) * JOY_MAX * 1.3;
+    dx = t.clientX - j.ox; dy = t.clientY - j.oy;
+  }
+  const l = Math.hypot(dx, dy) || 1;
+  j.vx = dx / l; j.vy = dy / l; j.mag = Math.min(1, l / JOY_MAX);
+  showJoy();
+}
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (!G.started) return;
+  for (const t of e.changedTouches) {
+    if (!TOUCH.joy && t.clientX < VW * 0.55) {
+      TOUCH.joy = { id: t.identifier, ox: t.clientX, oy: t.clientY, vx: 0, vy: 0, mag: 0 };
+      showJoy();
+    }
+  }
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) if (TOUCH.joy && t.identifier === TOUCH.joy.id) moveJoy(t);
+}, { passive: false });
+function endTouch(e) {
+  for (const t of e.changedTouches) if (TOUCH.joy && t.identifier === TOUCH.joy.id) { TOUCH.joy = null; showJoy(); }
+}
+canvas.addEventListener('touchend', endTouch);
+canvas.addEventListener('touchcancel', endTouch);
+// Botões na tela, avisos tocáveis e itens do alforje usam data-key
+$('hud').addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('[data-key]');
+  if (!el || !G.started) return;
+  e.preventDefault();
+  pressed[el.dataset.key] = true;
+  el.classList.add('down');
+  setTimeout(() => el.classList.remove('down'), 120);
+});
+document.addEventListener('gesturestart', (e) => e.preventDefault());
 
 // ---------------------------------------------------------------------
 // Câmera
@@ -914,7 +998,7 @@ function getInteraction() {
     if (p.interact === 'trough') consider(d, 50, { e: { label: 'Lavar o rosto', fn: washFace } });
     if (p.interact === 'well') consider(d, 50, { e: { label: 'Beber água do poço', fn: drinkWell } });
     if (p.interact === 'campfire') consider(d, 60, {
-      e: { label: 'Acampar e descansar', fn: () => { G.sitting = { x: p.x - 40, y: p.y + 10, camp: true }; player.x = p.x - 40; player.y = p.y + 10; player.dir = 1; toast('Acampamento', 'O tempo passa mais rápido. [E] para levantar.'); } },
+      e: { label: 'Acampar e descansar', fn: () => { G.sitting = { x: p.x - 40, y: p.y + 10, camp: true }; player.x = p.x - 40; player.y = p.y + 10; player.dir = 1; toast('Acampamento', TOUCH.on ? 'O tempo passa mais rápido. Mexa o joystick para levantar.' : 'O tempo passa mais rápido. [E] para levantar.'); } },
       f: G.food > 0 ? { label: 'Cozinhar feijão', fn: () => { G.food--; eatFood(true); } } : null,
     });
   }
@@ -988,7 +1072,7 @@ function pickHerb(h) {
 function sitDown(p) {
   G.sitting = { x: p.x, y: p.y - 2, bench: p };
   player.x = p.x; player.y = p.y - 2;
-  toast('Descansando', 'O tempo passa mais rápido. [E] para levantar.');
+  toast('Descansando', TOUCH.on ? 'O tempo passa mais rápido. Mexa o joystick para levantar.' : 'O tempo passa mais rápido. [E] para levantar.');
 }
 function standUp() {
   const s = G.sitting;
@@ -1016,14 +1100,14 @@ function eatFood(cooked) {
 // ---------------------------------------------------------------------
 // Tiros
 // ---------------------------------------------------------------------
-function shoot() {
+function shoot(target) {
   if (G.reloading > 0 || player.shotT > 0) return;
   if (G.ammo <= 0) { sfx('click'); if (G.reserve > 0) startReload(); else toast('Sem munição', 'Compre mais no Armazém.'); return; }
   G.ammo--;
-  const w = screenToWorld(mouse.x, mouse.y);
+  const w = target || screenToWorld(mouse.x, mouse.y);
   const ox = player.x, oy = player.y - (player.mounted ? 48 : 22);
   let ang = Math.atan2(w.y - oy, w.x - ox);
-  const spread = G.deadEyeOn ? 0 : (player.moving ? 0.07 : 0.025) + G.drunk / 1200;
+  const spread = G.deadEyeOn ? 0 : ((player.moving ? 0.07 : 0.025) + G.drunk / 1200) * (target ? 0.5 : 1);
   ang += (Math.random() - 0.5) * spread * 2;
   player.aim = ang; player.shotT = G.deadEyeOn ? 0.12 : 0.28; player.dir = Math.cos(ang) >= 0 ? 1 : -1;
   const mx = ox + Math.cos(ang) * 18, my = oy + Math.sin(ang) * 18;
@@ -1036,6 +1120,34 @@ function shoot() {
     for (const n of npcs) if (n.alive && dist(n.x, n.y, player.x, player.y) < 380) n.flee = Math.max(n.flee, 4);
   }
   if (G.ammo === 0 && G.reserve > 0) setTimeout(startReload, 300);
+}
+// Mira automática para o celular: bandidos primeiro, depois garrafas.
+// Nunca mira em moradores inocentes.
+function autoTarget() {
+  let best = null, bd = 1e9;
+  for (const o of outlaws) {
+    if (!o.alive) continue;
+    const d = dist(player.x, player.y, o.x, o.y);
+    if (d < 520 && d < bd) { bd = d; best = { x: o.x, y: o.y - 20 }; }
+  }
+  if (best) return best;
+  for (const b of bottles) {
+    if (!b.alive) continue;
+    const d = dist(player.x, player.y, b.x, b.y);
+    if (d < 380 && d < bd) { bd = d; best = { x: b.x, y: b.y - 9 }; }
+  }
+  return best;
+}
+function touchShoot() {
+  const t = G.autoTarget;
+  if (t) return shoot({ x: t.x, y: t.y });
+  const fx = player.fx || player.dir, fy = player.fy || 0;
+  shoot({ x: player.x + fx * 300, y: player.y - (player.mounted ? 48 : 22) + fy * 300 });
+}
+function useTonic() {
+  if (G.tonic <= 0) { toast('Sem tônico', 'Compre no Armazém.'); return; }
+  G.tonic--; G.deadEye = 100; G.deadEyeCore = 100; sfx('drink'); toast('Tônico', 'Olho Morto restaurado.', 'good');
+  if (G.invOpen) renderInventory();
 }
 function startReload() {
   if (G.reloading > 0 || G.ammo >= 6 || G.reserve <= 0) return;
@@ -1138,13 +1250,17 @@ function update(rdt) {
     if (pressed.KeyE && inter && inter.e) inter.e.fn();
     else if (pressed.KeyF && inter && inter.f) inter.f.fn();
     if (pressed.KeyH && !player.mounted) whistle();
-    if (pressed.KeyC && G.food > 0) { G.food--; eatFood(false); }
+    if (pressed.KeyC && G.food > 0) { G.food--; eatFood(false); if (G.invOpen) renderInventory(); }
     if (pressed.KeyR) startReload();
     if (pressed.KeyG && !G.sitting) { player.tipHat = 0.8; }
     if (pressed.Tab) toggleInventory();
+    if (pressed.KeyT) useTonic();
+    if (pressed.Shoot && !G.sitting) touchShoot();
     if (pressed.Escape && G.invOpen) toggleInventory();
     if (pressed.Mouse0 && !G.sitting) shoot();
   } else renderPrompts([]);
+
+  G.autoTarget = TOUCH.on ? autoTarget() : null;
 
   // ---- jogador
   updatePlayer(dt, blocked);
@@ -1193,6 +1309,7 @@ function updatePlayer(dt, blocked) {
     if (keys.KeyS || keys.ArrowDown) iy += 1;
     if (keys.KeyA || keys.ArrowLeft) ix -= 1;
     if (keys.KeyD || keys.ArrowRight) ix += 1;
+    if (TOUCH.joy && TOUCH.joy.mag > 0.18) { ix = TOUCH.joy.vx; iy = TOUCH.joy.vy; }
   }
   if (G.sitting) {
     player.moving = false; player.vx = player.vy = 0;
@@ -1203,7 +1320,8 @@ function updatePlayer(dt, blocked) {
   }
   const len = Math.hypot(ix, iy) || 1;
   ix /= len; iy /= len;
-  const wantRun = keys.ShiftLeft || keys.ShiftRight;
+  const wantRun = keys.ShiftLeft || keys.ShiftRight || (TOUCH.joy && TOUCH.joy.mag > 0.9);
+  if (ix || iy) { player.fx = ix; player.fy = iy; }
   let speed;
   const drunkWobble = G.drunk > 30 ? Math.sin(performance.now() / 400) * (G.drunk / 200) : 0;
   if (player.mounted) {
@@ -1490,6 +1608,7 @@ function toggleInventory() {
   G.invOpen = !G.invOpen;
   const el = $('inventory');
   el.classList.toggle('hidden', !G.invOpen);
+  document.body.classList.toggle('ui-open', G.invOpen || !!G.menu);
   if (!G.invOpen) return;
   renderInventory();
 }
@@ -1499,22 +1618,20 @@ function renderInventory() {
   el.innerHTML = `<h3>Alforje</h3>
     <div class="row"><span>Dinheiro</span><span>${fmtMoney(G.money)}</span></div>
     <div class="row"><span>No banco</span><span>${fmtMoney(G.bank)}</span></div>
-    <div class="row"><span>Feijão enlatado [C]</span><span>${G.food}</span></div>
-    <div class="row"><span>Tônico Olho Morto [T]</span><span>${G.tonic}</span></div>
+    <div class="row use" data-key="KeyC"><span>Feijão enlatado [C]</span><span>${G.food}</span></div>
+    <div class="row use" data-key="KeyT"><span>Tônico Olho Morto [T]</span><span>${G.tonic}</span></div>
     <div class="row"><span>Cenouras</span><span>${G.carrots || 0}</span></div>
     <div class="row"><span>Munição</span><span>${G.ammo + G.reserve}</span></div>
     ${herbsList}
     <div class="row"><span>Vínculo c/ ${horse.name}</span><span>Nível ${Math.floor(horse.bond)}</span></div>
     <div class="row"><span>Barba</span><span>${G.beard < 0.2 ? 'Feita' : G.beard < 0.6 ? 'Por fazer' : 'Longa'}</span></div>
     <div class="row"><span>Higiene</span><span>${G.dirt < 0.3 ? 'Limpo' : G.dirt < 0.65 ? 'Empoeirado' : 'Imundo'}</span></div>
-    <div class="row"><span>Garrafas acertadas</span><span>${G.bottleHits || 0}</span></div>`;
+    <div class="row"><span>Garrafas acertadas</span><span>${G.bottleHits || 0}</span></div>
+    <button class="inv-close" data-key="Tab">Fechar</button>`;
 }
 window.addEventListener('keydown', (e) => {
   if (!G.started || G.menu) return;
-  if (e.code === 'KeyT' && G.tonic > 0) {
-    G.tonic--; G.deadEye = 100; G.deadEyeCore = 100; sfx('drink'); toast('Tônico', 'Olho Morto restaurado.', 'good');
-    if (G.invOpen) renderInventory();
-  }
+  // (o tônico é tratado em update() via pressed.KeyT)
 });
 
 // ---------------------------------------------------------------------
@@ -2128,7 +2245,7 @@ function render() {
   }
 
   // balões de fala
-  ctx.font = '13px "Crimson Text", Georgia, serif';
+  ctx.font = `${TOUCH.on ? 15 : 13}px "Crimson Text", Georgia, serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const b of bubbles) {
     const e = b.ent;
@@ -2181,6 +2298,16 @@ function render() {
 
 function drawCrosshair() {
   if (G.menu) return;
+  if (TOUCH.on) {
+    const t = G.autoTarget;
+    if (!t) return;
+    const x = (t.x - cam.x) * ZOOM + VW / 2, y = (t.y - cam.y) * ZOOM + VH / 2;
+    const r = 11 + Math.sin(performance.now() / 150) * 2;
+    ctx.strokeStyle = 'rgba(255,90,70,0.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - r - 5, y); ctx.lineTo(x - r + 4, y); ctx.moveTo(x + r - 4, y); ctx.lineTo(x + r + 5, y); ctx.stroke();
+    return;
+  }
   const x = mouse.x, y = mouse.y;
   ctx.strokeStyle = player.aiming ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)';
   ctx.lineWidth = 1.5;
@@ -2209,8 +2336,9 @@ function drawCore(x, y, r, outer, inner, color, icon) {
 }
 
 function drawMinimap() {
-  const R0 = Math.min(78, VW * 0.14);
-  const cx = 24 + R0, cy = VH - 24 - R0;
+  const R0 = MM_R;
+  // no celular o minimapa vai para o canto superior esquerdo (o joystick fica embaixo)
+  const cx = (TOUCH.on ? 12 : 24) + R0, cy = TOUCH.on ? 12 + R0 : VH - 24 - R0;
   ctx.save();
   ctx.beginPath(); ctx.arc(cx, cy, R0, 0, Math.PI * 2); ctx.closePath();
   ctx.fillStyle = 'rgba(10,6,3,0.8)'; ctx.fill();
@@ -2258,13 +2386,15 @@ function drawMinimap() {
   ctx.fillStyle = '#f1e6cf'; ctx.font = 'bold 12px Georgia'; ctx.textAlign = 'center'; ctx.fillText('N', cx, cy - R0 + 10);
 
   // núcleos
-  const cr = 15, gy = cy - R0 - 26;
-  drawCore(cx - 42, gy, cr, G.health, G.healthCore, '#e8e0c8', '♥');
+  const cr = TOUCH.on ? 12 : 15, gap = TOUCH.on ? 32 : 42;
+  const gy = TOUCH.on ? cy + R0 + 22 : cy - R0 - 26;
+  drawCore(cx - gap, gy, cr, G.health, G.healthCore, '#e8e0c8', '♥');
   drawCore(cx, gy, cr, G.stamina, G.staminaCore, '#e8e0c8', '⚡');
-  drawCore(cx + 42, gy, cr, G.deadEye, G.deadEyeCore, G.deadEyeOn ? '#e8a040' : '#e8e0c8', '◎');
+  drawCore(cx + gap, gy, cr, G.deadEye, G.deadEyeCore, G.deadEyeOn ? '#e8a040' : '#e8e0c8', '◎');
   if (player.mounted || dist(horse.x, horse.y, player.x, player.y) < 200) {
-    drawCore(cx + R0 + 34, cy - 20, 13, horse.health, 100, '#c9a86a', '♞');
-    drawCore(cx + R0 + 34, cy + 16, 13, horse.stamina, 100, '#c9a86a', '⚡');
+    const hr = TOUCH.on ? 11 : 13, hx = cx + R0 + (TOUCH.on ? 22 : 34);
+    drawCore(hx, cy - hr - 4, hr, horse.health, 100, '#c9a86a', '♞');
+    drawCore(hx, cy + hr + 4, hr, horse.stamina, 100, '#c9a86a', '⚡');
   }
 }
 

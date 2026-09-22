@@ -14,7 +14,18 @@ Abra o `index.html` no navegador. Se preferir, rode um servidor local:
 npx http-server .   # ou: python3 -m http.server
 ```
 
-## Controles
+## No celular
+
+O jogo detecta a tela de toque e troca os controles:
+
+- **Andar:** arraste o dedo no lado esquerdo da tela (joystick virtual). Levar até a borda faz correr ou galopar.
+- **Ações:** os botões aparecem sozinhos perto de portas, pessoas, do cavalo, dos bancos etc. É só tocar neles.
+- **🔫 Atirar:** mira automática no bandido ou na garrafa mais próxima (nunca em moradores). Sem alvo, atira para a frente.
+- **◎** Olho Morto · **↻** Recarregar · **🎒** Alforje (toque em um item para comer ou beber o tônico).
+
+Funciona na vertical e na horizontal; a horizontal mostra mais do mapa.
+
+## Controles (teclado e mouse)
 
 | Tecla | Ação |
 |---|---|
