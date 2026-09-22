@@ -63,8 +63,7 @@ function enableTouchMode() {
   if (TOUCH.on) return;
   TOUCH.on = true;
   document.body.classList.add('touch');
-  const btn = document.getElementById('startBtn');
-  if (btn) btn.textContent = 'Toque para começar';
+  if (typeof updateStartButton === 'function') updateStartButton();
   resize();
 }
 if (window.matchMedia && (matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches))) enableTouchMode();
@@ -81,7 +80,7 @@ const TOWN = { x: 420, y: 680, w: 3040, h: 1240 };
 
 const BUILDINGS = [];
 function addBuilding(o) {
-  if (o.face === 'S') o.y = NORTH_EDGE - o.h; else o.y = SOUTH_EDGE;
+  if (o.y === undefined) { if (o.face === 'S') o.y = NORTH_EDGE - o.h; else o.y = SOUTH_EDGE; }
   o.doorX = o.x + o.w / 2;
   o.doorY = o.face === 'S' ? o.y + o.h + 16 : o.y - 16;
   BUILDINGS.push(o);
@@ -102,6 +101,11 @@ addBuilding({ id: 'house', name: '', x: 1640, w: 200, h: 190, face: 'N', wall: '
 addBuilding({ id: 'post', name: 'CORREIO', x: 2090, w: 230, h: 200, face: 'N', wall: '#6b7e8c', roof: '#434e57', trim: '#f0e2c0' });
 addBuilding({ id: 'house', name: '', x: 2370, w: 200, h: 190, face: 'N', wall: '#8d7457', roof: '#584632', trim: '#d8c7a3' });
 addBuilding({ id: 'house', name: '', x: 2620, w: 220, h: 200, face: 'N', wall: '#a08a67', roof: '#65563f', trim: '#d8c7a3' });
+// Fazendas fora da cidade
+addBuilding({ id: 'farm', name: 'FAZENDA', owner: 'Família Braithwaite', x: 2480, y: 300, w: 240, h: 200, face: 'S', wall: '#9a5a3a', roof: '#5a3526', trim: '#efe1bf' });
+addBuilding({ id: 'farm', name: 'RANCHO', owner: 'Rancho Esmeralda', x: 1300, y: 2020, w: 260, h: 210, face: 'S', wall: '#8a7a5a', roof: '#4f4534', trim: '#efe1bf' });
+const FARMS = BUILDINGS.filter((b) => b.id === 'farm');
+const TRACK_Y = 2500; // ferrovia ao sul
 
 const solids = [];   // retângulos sólidos {x,y,w,h}
 const props = [];    // objetos decorativos / interativos
@@ -111,7 +115,7 @@ function addProp(type, x, y, extra) {
   const p = Object.assign({ type, x, y }, extra || {});
   const sz = {
     barrel: [18, 12], trough: [60, 16], post: [44, 6], lamp: [8, 8], bench: [50, 10], wagon: [110, 40],
-    crate: [22, 16], well: [44, 30], cactus: [16, 10], rock: [30, 18], tree: [18, 12], campfire: [30, 20],
+    crate: [22, 16], well: [44, 30], windmill: [24, 12], cactus: [16, 10], rock: [30, 18], tree: [18, 12], campfire: [30, 20],
     fence: [0, 0], piano: [0, 0], bush: [0, 0], bottle: [0, 0], tent: [80, 40], grave: [16, 8],
   }[type] || [0, 0];
   p.w = p.w || sz[0]; p.h = p.h || sz[1];
@@ -126,6 +130,8 @@ function onRoadOrTown(x, y, pad) {
   if (x > TOWN.x - pad && x < TOWN.x + TOWN.w + pad && y > TOWN.y - pad && y < TOWN.y + TOWN.h + pad) return true;
   if (Math.abs(y - trailY(x)) < 80 + pad) return true;
   if (Math.abs(x - trailX(y)) < 80 + pad) return true;
+  if (Math.abs(y - TRACK_Y) < 50 + pad) return true;
+  for (const f of FARMS) if (x > f.x - 120 - pad && x < f.x + f.w + 120 + pad && y > f.y - 60 - pad && y < f.y + f.h + 200 + pad) return true;
   return false;
 }
 function trailY(x) { return 1200 + (x > 3440 ? Math.sin((x - 3440) / 260) * 90 + (x - 3440) * 0.25 : 0) + (x < 380 ? (380 - x) * -0.12 : 0); }
@@ -151,6 +157,12 @@ addProp('bench', 2200, 1356, { interact: 'bench' });
 addProp('wagon', 1730, 1180);
 addProp('well', 1960, 820, { interact: 'well' });
 addProp('barrel', 2640, 1030); addProp('barrel', 2380, 1390);
+
+for (const f of FARMS) {
+  addProp('windmill', f.x - 60, f.y + f.h - 20);
+  addProp('trough', f.x + f.w + 50, f.y + f.h + 30, { interact: 'trough' });
+  addProp('crate', f.x + f.w - 20, f.y + f.h + 28); addProp('barrel', f.x + 20, f.y + f.h + 26);
+}
 
 // Curral atrás do estábulo
 const CORRAL = { x: 960, y: 1680, w: 360, h: 200 };
@@ -279,6 +291,22 @@ ground.width = WORLD_W * GROUND_SCALE; ground.height = WORLD_H * GROUND_SCALE;
     if (b.face === 'S') boardwalk(b.x - 10, NORTH_EDGE, b.w + 20, 40);
     else boardwalk(b.x - 10, SOUTH_EDGE - 40, b.w + 20, 40);
   }
+  // plantações das fazendas
+  for (const f of FARMS) {
+    c.fillStyle = 'rgba(120,85,50,0.55)'; c.fillRect(f.x - 20, f.y + f.h + 60, f.w + 40, 130);
+    c.strokeStyle = 'rgba(70,45,20,0.55)'; c.lineWidth = 4;
+    for (let yy = f.y + f.h + 70; yy < f.y + f.h + 185; yy += 14) { c.beginPath(); c.moveTo(f.x - 16, yy); c.lineTo(f.x + f.w + 16, yy); c.stroke(); }
+    c.fillStyle = 'rgba(120,150,60,0.8)';
+    for (let yy = f.y + f.h + 66; yy < f.y + f.h + 185; yy += 14) for (let xx = f.x - 10; xx < f.x + f.w + 10; xx += 11) { c.beginPath(); c.arc(xx + R(-2, 2), yy, R(2, 3.5), 0, Math.PI * 2); c.fill(); }
+    c.fillStyle = 'rgba(150,115,75,0.6)'; c.fillRect(f.x - 20, f.y + f.h, f.w + 40, 56);
+  }
+  // ferrovia
+  c.fillStyle = '#7a6a58'; c.fillRect(0, TRACK_Y - 26, WORLD_W, 30);
+  c.fillStyle = 'rgba(0,0,0,0.12)'; for (let i = 0; i < 900; i++) c.fillRect(R(0, WORLD_W), R(TRACK_Y - 26, TRACK_Y + 4), 2, 2);
+  c.fillStyle = '#4a3222'; for (let x = 0; x < WORLD_W; x += 16) c.fillRect(x, TRACK_Y - 24, 7, 26);
+  c.fillStyle = '#8c8c8c'; c.fillRect(0, TRACK_Y - 20, WORLD_W, 3); c.fillRect(0, TRACK_Y - 4, WORLD_W, 3);
+  c.fillStyle = 'rgba(255,255,255,0.25)'; c.fillRect(0, TRACK_Y - 20, WORLD_W, 1); c.fillRect(0, TRACK_Y - 4, WORLD_W, 1);
+
   // chão do curral
   c.fillStyle = '#9d7648'; c.fillRect(CORRAL.x, CORRAL.y, CORRAL.w, CORRAL.h);
   for (let i = 0; i < 160; i++) {
@@ -318,6 +346,8 @@ const G = {
   prayedDay: 0, lastHit: 0,
   menu: null, sitting: null, invOpen: false,
   fading: false, shake: 0,
+  wx: { kind: 'clear', t: 5, rain: 0, cloud: 0, flash: 0 },
+  pelts: {}, meat: 0, hunts: 0, job: null, jobsDone: 0, event: null, muted: false,
 };
 
 const player = {
@@ -404,10 +434,11 @@ function solidAt(x, y) {
 // ---------------------------------------------------------------------
 // Áudio (sintetizado)
 // ---------------------------------------------------------------------
-let AC = null;
+let AC = null, MASTER = null;
 function initAudio() {
   if (AC) return;
-  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; }
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; return; }
+  MASTER = AC.createGain(); MASTER.gain.value = G.muted ? 0 : 1; MASTER.connect(AC.destination);
 }
 function noiseBuf(dur) {
   const b = AC.createBuffer(1, Math.floor(AC.sampleRate * dur), AC.sampleRate);
@@ -421,7 +452,7 @@ function tone(freq, dur, type, vol, when, slideTo) {
   o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t);
   if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
   g.gain.setValueAtTime(vol || 0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  o.connect(g).connect(AC.destination); o.start(t); o.stop(t + dur + 0.05);
+  o.connect(g).connect(MASTER); o.start(t); o.stop(t + dur + 0.05);
 }
 function sfx(kind, vol) {
   if (!AC) return;
@@ -432,13 +463,13 @@ function sfx(kind, vol) {
     const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(kind === 'shot' ? 2600 : 1400, t);
     f.frequency.exponentialRampToValueAtTime(200, t + 0.4);
     const g = AC.createGain(); g.gain.setValueAtTime(0.7 * vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
-    src.connect(f).connect(g).connect(AC.destination); src.start(t);
+    src.connect(f).connect(g).connect(MASTER); src.start(t);
     tone(90, 0.18, 'sine', 0.5 * vol, 0, 40);
   } else if (kind === 'glass') {
     const src = AC.createBufferSource(); src.buffer = noiseBuf(0.25);
     const f = AC.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 3000;
     const g = AC.createGain(); g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    src.connect(f).connect(g).connect(AC.destination); src.start(t);
+    src.connect(f).connect(g).connect(MASTER); src.start(t);
     tone(2400, 0.2, 'triangle', 0.08, 0.02); tone(3100, 0.15, 'triangle', 0.06, 0.05);
   } else if (kind === 'coin') {
     tone(1318, 0.09, 'square', 0.06); tone(1760, 0.25, 'square', 0.06, 0.08);
@@ -465,6 +496,15 @@ function sfx(kind, vol) {
     tone(700, 0.6, 'sawtooth', 0.05, 0, 400); tone(900, 0.4, 'sawtooth', 0.03, 0.1, 500);
   } else if (kind === 'bark') {
     tone(400, 0.08, 'sawtooth', 0.1, 0, 250); tone(420, 0.08, 'sawtooth', 0.1, 0.15, 250);
+  } else if (kind === 'train') {
+    for (const [f, w] of [[392, 0], [494, 0], [587, 0], [392, 1.3], [494, 1.3], [587, 1.3]]) tone(f, 1.0, 'sawtooth', 0.025 * vol, w);
+  } else if (kind === 'thunder') {
+    const src = AC.createBufferSource(); src.buffer = noiseBuf(3);
+    const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 220;
+    const g = AC.createGain(); g.gain.setValueAtTime(0.001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.15); g.gain.exponentialRampToValueAtTime(0.001, t + 2.8);
+    src.connect(f).connect(g).connect(MASTER); src.start(t);
+  } else if (kind === 'growl') {
+    tone(110, 0.6, 'sawtooth', 0.08 * vol, 0, 85); tone(700, 0.4, 'sawtooth', 0.03 * vol, 0.5, 1100);
   } else if (kind === 'dice') {
     for (let i = 0; i < 6; i++) tone(1200 + Math.random() * 800, 0.03, 'square', 0.05, i * 0.07);
   }
@@ -517,7 +557,7 @@ function updateHUD() {
   const h = Math.floor(G.time) % 24, m = Math.floor((G.time % 1) * 60);
   const clock = `Dia ${G.day} · ${String(h).padStart(2, '0')}:${String(m - (m % 5)).padStart(2, '0')}`;
   const ammoTxt = G.reloading > 0 ? 'Recarregando...' : `${G.ammo} / ${G.reserve}`;
-  const key = clock + G.money.toFixed(2) + ammoTxt + Math.round(G.honor) + G.wanted + (G.bounty ? G.bounty.stage : '');
+  const key = clock + G.money.toFixed(2) + ammoTxt + Math.round(G.honor) + G.wanted + (G.bounty ? G.bounty.stage : '') + (G.event ? G.event.type + G.event.stage : '') + (G.job ? G.job.name : '');
   if (key === lastHud) return;
   lastHud = key;
   $('clock').textContent = clock;
@@ -533,6 +573,13 @@ function updateHUD() {
   if (G.wanted > 0) obj = `<div class="obj-title">PROCURADO</div>Recompensa de ${fmtMoney(G.wanted)} pela sua cabeça — pague no Xerife`;
   else if (G.bounty && G.bounty.stage === 'hunt') obj = `<div class="obj-title">CAÇADA</div>Encontre e elimine ${G.bounty.name} (marcado em vermelho no mapa)`;
   else if (G.bounty && G.bounty.stage === 'return') obj = `<div class="obj-title">CAÇADA</div>Volte ao Xerife para receber ${fmtMoney(G.bounty.reward)}`;
+  const ev = G.event;
+  if (!G.wanted && ev) {
+    if (ev.type === 'thief' && ev.stage === 'chase') obj = `<div class="obj-title">LADRÃO</div>Alcance o ladrão da bolsa de ${ev.victim.name}`;
+    else if (ev.type === 'thief') obj = `<div class="obj-title">LADRÃO</div>Devolva a bolsa para ${ev.victim.name}`;
+    else obj = `<div class="obj-title">AJUDA</div>${ev.victim.name} foi picado por uma cobra. Leve um tônico ou feijão.`;
+  }
+  if (!obj && G.job) obj = `<div class="obj-title">ENTREGA</div>Leve a encomenda para ${G.job.name}, em ${G.job.where}`;
   $('objective').innerHTML = obj;
 }
 
@@ -649,6 +696,9 @@ function buildingMenu(b) {
           { label: `Vender ervas (${hc})`, desc: 'Ervas coletadas nos arredores. $0.40 cada.', disabled: hc === 0, fn: () => {
             earn(hc * 0.4); G.herbs = {}; toast('Vendido', `Você vendeu ${hc} ervas por ${fmtMoney(hc * 0.4)}.`, 'gold'); return { options: opts() };
           } },
+          { label: `Vender peles (${peltCount()})`, desc: 'Coelho $0.75 · Coiote $1.50 · Cervo $2.50', disabled: peltCount() === 0, fn: () => {
+            const v = peltValue(), n = peltCount(); earn(v); G.pelts = {}; toast('Vendido', `${n} peles por ${fmtMoney(v)}.`, 'gold'); return { options: opts() };
+          } },
           close,
         ];
       };
@@ -729,7 +779,22 @@ function buildingMenu(b) {
           if (!G.gotLetter && Math.random() < 0.5) { G.gotLetter = true; earn(5); }
           return false;
         } },
+        G.job
+          ? { label: 'Cancelar entrega', desc: `Para ${G.job.name}, em ${G.job.where}.`, fn: () => { G.job = null; toast('Entrega cancelada', 'O carteiro suspira.'); return false; } }
+          : { label: 'Pegar uma entrega', desc: 'Leve uma encomenda pela região e receba por isso.', fn: () => { takeJob(); return false; } },
         { label: 'Enviar telegrama', price: 0.25, fn: () => { toast('Telegrama enviado', 'Pare. Tudo bem por aqui. Pare.'); return false; } },
+        close,
+      ]);
+      break;
+    case 'farm':
+      openMenu(b.owner, 'Galinhas, poeira e trabalho duro.', [
+        { label: 'Ajudar na lida', desc: 'Uma hora de trabalho pesado. Paga $1.50.', disabled: G.stamina < 25, fn: () => {
+          fadeTransition('Trabalhando...', () => { advanceTime(1); G.stamina = clamp(G.stamina - 30, 0, 100); G.dirt = clamp(G.dirt + 0.2, 0, 1); earn(1.5); changeHonor(1, null); toast('Trabalho feito', 'O fazendeiro te pagou $1.50.', 'gold'); });
+          return false;
+        } },
+        { label: 'Comprar leite fresco', desc: 'Recupera o núcleo de stamina.', price: 0.3, fn: () => { sfx('drink'); G.staminaCore = 100; G.stamina = 100; toast('Leite fresco', 'Ainda morno.'); return false; } },
+        { label: 'Comprar ovos', desc: 'Conta como comida (feijão +1).', price: 0.4, fn: () => { G.food++; toast('Comprado', 'Ovos frescos. Comida +1.'); return false; } },
+        { label: 'Conversar', fn: () => { toast(b.owner, pick(['"Os coiotes andam atacando as galinhas à noite."', '"Tem cervo no vale ao norte, se quiser caçar."', '"Cuidado com o trem ao cruzar os trilhos."', '"Choveu pouco este ano..."'])); return false; } },
         close,
       ]);
       break;
@@ -815,7 +880,7 @@ let pressed = {};
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') e.preventDefault();
   if (!G.started) {
-    if (e.code === 'Enter' || e.code === 'Space') startGame();
+    if (e.code === 'Enter' || e.code === 'Space') startGame(false);
     return;
   }
   if (!keys[e.code]) pressed[e.code] = true;
@@ -851,11 +916,14 @@ canvas.addEventListener('mousedown', (e) => {
 });
 window.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.down = false; if (e.button === 2) mouse.right = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-$('startBtn').addEventListener('click', startGame);
+$('startBtn').addEventListener('click', () => startGame(false));
+$('newGameBtn').addEventListener('click', () => { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* nada */ } startGame(true); });
 
-function startGame() {
+function startGame(fresh) {
   if (G.started) return;
+  const loaded = !fresh && loadGame();
   G.started = true;
+  $('muteBtn').textContent = G.muted ? '🔇' : '🔊';
   initAudio();
   if (AC && AC.state === 'suspended') AC.resume();
   if (TOUCH.on) {
@@ -865,6 +933,10 @@ function startGame() {
   $('title').classList.add('hidden');
   $('hud').classList.remove('hidden');
   banner('VALE ESPERANÇA', 'Novo Hanover · 1899');
+  if (loaded) {
+    setTimeout(() => toast('Bem-vindo de volta', `Dia ${G.day}. Seu progresso foi carregado.`, 'good'), 1200);
+    return;
+  }
   setTimeout(() => toast('Bem-vindo, forasteiro', TOUCH.on ? 'Explore a cidade. Chegue perto de portas e pessoas e toque nos botões que aparecem.' : 'Explore a cidade. Aproxime-se das portas e pessoas e use [E].'), 1500);
   setTimeout(() => toast('Dica', TOUCH.on ? 'Seu cavalo Tempestade está em frente ao estábulo. Toque em "Assobiar" para chamá-lo.' : 'Seu cavalo Tempestade está em frente ao estábulo. Pressione [H] para chamá-lo.'), 6000);
   setTimeout(() => toast('Dica', 'O Xerife tem trabalhos de caçador de recompensas.'), 11000);
@@ -966,7 +1038,7 @@ function getInteraction() {
   for (const b of BUILDINGS) {
     const d = dist(px, py, b.doorX, b.doorY);
     const label = { saloon: 'Entrar no Saloon', hotel: 'Entrar no Hotel', store: 'Entrar no Armazém', bank: 'Entrar no Banco', barber: 'Entrar na Barbearia',
-      church: 'Entrar na Igreja', sheriff: 'Falar com o Xerife', stable: 'Estábulo', post: 'Entrar no Correio', house: 'Bater na porta' }[b.id];
+      church: 'Entrar na Igreja', sheriff: 'Falar com o Xerife', stable: 'Estábulo', post: 'Entrar no Correio', house: 'Bater na porta', farm: 'Visitar a fazenda' }[b.id];
     consider(d, 42, { e: { label, fn: () => buildingMenu(b) } });
   }
   if (horse.state !== 'dead') {
@@ -977,7 +1049,7 @@ function getInteraction() {
     });
   }
   for (const n of npcs) {
-    if (!n.alive) continue;
+    if (!n.alive || n.hurt) continue;
     const d = dist(px, py, n.x, n.y);
     consider(d, 44, {
       e: { label: `Cumprimentar ${n.name}`, fn: () => greet(n) },
@@ -999,9 +1071,13 @@ function getInteraction() {
     if (p.interact === 'well') consider(d, 50, { e: { label: 'Beber água do poço', fn: drinkWell } });
     if (p.interact === 'campfire') consider(d, 60, {
       e: { label: 'Acampar e descansar', fn: () => { G.sitting = { x: p.x - 40, y: p.y + 10, camp: true }; player.x = p.x - 40; player.y = p.y + 10; player.dir = 1; toast('Acampamento', TOUCH.on ? 'O tempo passa mais rápido. Mexa o joystick para levantar.' : 'O tempo passa mais rápido. [E] para levantar.'); } },
-      f: G.food > 0 ? { label: 'Cozinhar feijão', fn: () => { G.food--; eatFood(true); } } : null,
+      f: G.meat > 0 ? { label: `Cozinhar carne (${G.meat})`, fn: () => { G.meat--; eatFood(true); G.healthCore = 100; } }
+        : G.food > 0 ? { label: 'Cozinhar feijão', fn: () => { G.food--; eatFood(true); } } : null,
     });
   }
+  for (const a of animals) if (!a.alive && !a.skinned) consider(dist(px, py, a.x, a.y), 38, { e: { label: `Esfolar ${ANIMAL[a.type].name}`, fn: () => skinAnimal(a) } });
+  if (G.job) consider(dist(px, py, G.job.x, G.job.y) - 25, 40, { e: { label: `Entregar encomenda a ${G.job.name}`, fn: deliverJob } });
+  eventInteractions(consider, px, py);
   return best;
 }
 
@@ -1119,23 +1195,21 @@ function shoot(target) {
   if (!G.bounty || dist(player.x, player.y, G.bounty.x, G.bounty.y) > 800) {
     for (const n of npcs) if (n.alive && dist(n.x, n.y, player.x, player.y) < 380) n.flee = Math.max(n.flee, 4);
   }
+  for (const a of animals) if (a.alive && a.type !== 'coyote' && dist(a.x, a.y, player.x, player.y) < 600) a.flee = 4;
   if (G.ammo === 0 && G.reserve > 0) setTimeout(startReload, 300);
 }
 // Mira automática para o celular: bandidos primeiro, depois garrafas.
 // Nunca mira em moradores inocentes.
 function autoTarget() {
   let best = null, bd = 1e9;
-  for (const o of outlaws) {
-    if (!o.alive) continue;
-    const d = dist(player.x, player.y, o.x, o.y);
-    if (d < 520 && d < bd) { bd = d; best = { x: o.x, y: o.y - 20 }; }
-  }
+  const tryT = (x, y, d, max) => { if (d < max && d < bd) { bd = d; best = { x, y }; } };
+  for (const o of outlaws) if (o.alive) tryT(o.x, o.y - 20, dist(player.x, player.y, o.x, o.y), 520);
+  for (const a of animals) if (a.alive && a.type === 'coyote' && a.hunting) tryT(a.x, a.y - 10, dist(player.x, player.y, a.x, a.y), 420);
+  const ev = G.event;
+  if (ev && ev.thief && ev.thief.alive && ev.stage === 'chase') tryT(ev.thief.x, ev.thief.y - 20, dist(player.x, player.y, ev.thief.x, ev.thief.y), 420);
   if (best) return best;
-  for (const b of bottles) {
-    if (!b.alive) continue;
-    const d = dist(player.x, player.y, b.x, b.y);
-    if (d < 380 && d < bd) { bd = d; best = { x: b.x, y: b.y - 9 }; }
-  }
+  for (const a of animals) if (a.alive) tryT(a.x, a.y - ANIMAL[a.type].hh * 0.5, dist(player.x, player.y, a.x, a.y), 420);
+  for (const b of bottles) if (b.alive) tryT(b.x, b.y - 9, dist(player.x, player.y, b.x, b.y), 380);
   return best;
 }
 function touchShoot() {
@@ -1260,6 +1334,7 @@ function update(rdt) {
     if (pressed.Mouse0 && !G.sitting) shoot();
   } else renderPrompts([]);
 
+  if (pressed.KeyM) toggleMute();
   G.autoTarget = TOUCH.on ? autoTarget() : null;
 
   // ---- jogador
@@ -1272,6 +1347,11 @@ function update(rdt) {
   updateBullets(dt);
   updateParticles(dt);
   updateWorld(dt);
+  updateAnimals(dt);
+  updateTrain(dt);
+  updateEvents(rdt, dt);
+  updateWeather(dt, tRate);
+  autosave(rdt);
 
   // câmera
   const lead = player.mounted ? 0.35 : 0.15;
@@ -1429,6 +1509,7 @@ function updateNPC(n, dt) {
     }
     return;
   }
+  if (n.hurt) { n.moving = false; return; }
   // medo do jogador procurado ou de tiros
   if (G.wanted > 0 && dist(n.x, n.y, player.x, player.y) < 200) n.flee = Math.max(n.flee, 2);
   if (n.flee > 0) {
@@ -1444,7 +1525,7 @@ function updateNPC(n, dt) {
   const arrived = steer(n, n.tx, n.ty, n.speed, dt, n.r);
   n.phase += dt * 8;
   if (arrived || n.stuck > 1.8) {
-    const p = randomStreetPoint();
+    const p = n.home ? { x: n.home.x + R(-130, 130), y: n.home.y + R(-10, 90) } : randomStreetPoint();
     n.tx = p.x; n.ty = p.y; n.wait = Math.random() < 0.5 ? R(1, 6) : 0; n.stuck = 0; n.moving = false;
     // conversa ambiente entre moradores
     if (Math.random() < 0.1 && dist(n.x, n.y, player.x, player.y) < 500) say(n, pick(['Que dia...', 'Hmm hmm hmm...', 'Preciso ir ao armazém.', 'Ouviu falar do assalto ao trem?', 'Vai chover, eu sinto nos ossos.']), 2.5);
@@ -1507,6 +1588,7 @@ function entsForHit() {
   const list = [];
   for (const n of npcs) if (n.alive) list.push(n);
   for (const o of outlaws) if (o.alive) list.push(o);
+  if (G.event && G.event.thief && G.event.thief.alive) list.push(G.event.thief);
   return list;
 }
 function updateBullets(dt) {
@@ -1536,6 +1618,7 @@ function updateBullets(dt) {
               if (e.hp <= 0) outlawDown(e);
             } else {
               killEnt(e);
+              if (e.kind === 'thief') thiefShot();
               if (e.kind === 'npc') {
                 G.wanted += 15; changeHonor(-20, 'Você matou um inocente.');
                 toast('Crime testemunhado', 'Assassinato. Recompensa por sua cabeça aumentou.');
@@ -1544,6 +1627,11 @@ function updateBullets(dt) {
             }
             break;
           }
+        }
+        if (!dead) for (const a of animals) {
+          if (!a.alive) continue;
+          const sp = ANIMAL[a.type];
+          if (Math.abs(b.x - a.x) < sp.hw && b.y > a.y - sp.hh && b.y < a.y + 3) { dead = true; hitAnimal(a, b.dmg); break; }
         }
         if (dog && Math.abs(b.x - dog.x) < 8 && b.y > dog.y - 16 && b.y < dog.y) {
           dead = true; toast('Ei!', 'O cachorro fugiu assustado. (A bala raspou nele.)'); dog.x += 60 * Math.sign(b.vx); changeHonor(-3, 'Atirou em um cachorro.');
@@ -1621,12 +1709,16 @@ function renderInventory() {
     <div class="row use" data-key="KeyC"><span>Feijão enlatado [C]</span><span>${G.food}</span></div>
     <div class="row use" data-key="KeyT"><span>Tônico Olho Morto [T]</span><span>${G.tonic}</span></div>
     <div class="row"><span>Cenouras</span><span>${G.carrots || 0}</span></div>
+    <div class="row"><span>Carne crua (cozinhe na fogueira)</span><span>${G.meat}</span></div>
+    ${Object.entries(G.pelts).map(([k, v]) => `<div class="row"><span>${k}</span><span>${v}</span></div>`).join('')}
     <div class="row"><span>Munição</span><span>${G.ammo + G.reserve}</span></div>
     ${herbsList}
     <div class="row"><span>Vínculo c/ ${horse.name}</span><span>Nível ${Math.floor(horse.bond)}</span></div>
     <div class="row"><span>Barba</span><span>${G.beard < 0.2 ? 'Feita' : G.beard < 0.6 ? 'Por fazer' : 'Longa'}</span></div>
     <div class="row"><span>Higiene</span><span>${G.dirt < 0.3 ? 'Limpo' : G.dirt < 0.65 ? 'Empoeirado' : 'Imundo'}</span></div>
     <div class="row"><span>Garrafas acertadas</span><span>${G.bottleHits || 0}</span></div>
+    <div class="row"><span>Animais caçados</span><span>${G.hunts}</span></div>
+    <div class="row"><span>Entregas feitas</span><span>${G.jobsDone}</span></div>
     <button class="inv-close" data-key="Tab">Fechar</button>`;
 }
 window.addEventListener('keydown', (e) => {
@@ -2060,6 +2152,20 @@ function drawProp(c, p) {
       c.fillStyle = '#cdbf9a'; c.beginPath(); c.moveTo(x - 40, y); c.lineTo(x, y - 50); c.lineTo(x + 40, y); c.fill();
       c.fillStyle = '#3a2a1a'; c.beginPath(); c.moveTo(x - 10, y); c.lineTo(x, y - 30); c.lineTo(x + 10, y); c.fill();
       break;
+    case 'windmill': {
+      c.fillStyle = 'rgba(0,0,0,0.2)'; ellipse(c, x + 16, y, 26, 6);
+      c.strokeStyle = '#5a4a3a'; c.lineWidth = 3;
+      c.beginPath(); c.moveTo(x - 12, y); c.lineTo(x - 2, y - 90); c.moveTo(x + 12, y); c.lineTo(x + 2, y - 90);
+      c.moveTo(x - 9, y - 25); c.lineTo(x + 9, y - 25); c.moveTo(x - 6, y - 55); c.lineTo(x + 6, y - 55); c.stroke();
+      const rot = performance.now() / 600;
+      c.save(); c.translate(x, y - 94); c.rotate(rot);
+      c.fillStyle = '#d8d0c0';
+      for (let i = 0; i < 12; i++) { c.rotate(Math.PI / 6); c.fillRect(2, -2, 22, 4); }
+      c.restore();
+      c.fillStyle = '#3a3a3a'; ellipse(c, x, y - 94, 4, 4);
+      c.fillStyle = '#8a3a2a'; c.beginPath(); c.moveTo(x - 4, y - 94); c.lineTo(x - 26, y - 100); c.lineTo(x - 26, y - 88); c.fill();
+      break;
+    }
     case 'grave':
       c.fillStyle = 'rgba(0,0,0,0.2)'; c.fillRect(x - 6, y - 1, 16, 4);
       c.fillStyle = '#8a8478'; rrect(c, x - 7, y - 20, 14, 20, 5);
@@ -2097,6 +2203,9 @@ function drawTumbleweed(c, t) {
 // Iluminação / ciclo de dia
 // ---------------------------------------------------------------------
 function darkness() {
+  return Math.min(0.8, baseDarkness() + G.wx.cloud * 0.08 + G.wx.rain * 0.08);
+}
+function baseDarkness() {
   const t = G.time;
   // 0 = dia, ~0.75 = noite
   if (t >= 7 && t <= 18) return 0;
@@ -2194,11 +2303,14 @@ function render() {
   for (const b of BUILDINGS) if (visible(b.x + b.w / 2, b.y + b.h / 2, Math.max(b.w, b.h))) draw.push({ y: b.y + b.h, f: () => drawBuilding(ctx, b, night) });
   for (const p of props) if (visible(p.x, p.y, p.w || 200)) draw.push({ y: p.type === 'fence' ? p.y + p.h : p.y, f: () => drawProp(ctx, p) });
   for (const b of bottles) if (visible(b.x, b.y)) draw.push({ y: b.y + 1, f: () => drawBottle(ctx, b) });
-  for (const n of npcs) if (visible(n.x, n.y)) draw.push({ y: n.alive ? n.y : n.y - 30, f: () => drawPerson(ctx, n) });
+  for (const n of npcs) if (visible(n.x, n.y)) draw.push({ y: n.alive ? n.y : n.y - 30, f: () => drawPerson(ctx, n, n.hurt ? { sitting: true } : undefined) });
   for (const o of outlaws) if (visible(o.x, o.y)) draw.push({ y: o.alive ? o.y : o.y - 30, f: () => drawPerson(ctx, o, { aiming: o.shotT > 0 && o.alive, aimAngle: o.aim }) });
   for (const h of corralHorses) if (visible(h.x, h.y)) draw.push({ y: h.y, f: () => drawHorse(ctx, h) });
   for (const t of tumbleweeds) if (visible(t.x, t.y)) draw.push({ y: t.y, f: () => drawTumbleweed(ctx, t) });
   if (dog && visible(dog.x, dog.y)) draw.push({ y: dog.y, f: () => drawDog(ctx, dog) });
+  for (const a of animals) if (visible(a.x, a.y)) draw.push({ y: a.y, f: () => drawAnimal(ctx, a) });
+  if (G.event && G.event.thief && visible(G.event.thief.x, G.event.thief.y)) { const t = G.event.thief; draw.push({ y: t.alive ? t.y : t.y - 30, f: () => drawPerson(ctx, t) }); }
+  if (train.active) draw.push({ y: TRACK_Y + 4, f: () => drawTrain(ctx) });
   // aro discreto sob o jogador para diferenciá-lo dos moradores
   draw.push({ y: -1e9, f: () => {
     ctx.strokeStyle = 'rgba(255,240,200,0.35)'; ctx.lineWidth = 1.5;
@@ -2244,6 +2356,21 @@ function render() {
     }
   }
 
+  // marcadores de evento
+  if (G.event) {
+    const ev = G.event;
+    const tgt = ev.type === 'thief' ? (ev.stage === 'chase' ? ev.thief : ev.victim) : ev.victim;
+    if (tgt && (tgt.alive || ev.stage === 'chase')) {
+      const bob = Math.sin(performance.now() / 200) * 2;
+      ctx.fillStyle = '#e8c040'; ctx.font = 'bold 18px Georgia, serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('!', tgt.x, tgt.y - 60 + bob);
+    }
+  }
+  if (G.job && visible(G.job.x, G.job.y)) {
+    ctx.strokeStyle = 'rgba(232,192,64,0.8)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(G.job.x, G.job.y, 18 + Math.sin(performance.now() / 250) * 3, 7, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+
   // balões de fala
   ctx.font = `${TOUCH.on ? 15 : 13}px "Crimson Text", Georgia, serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2266,6 +2393,7 @@ function render() {
   const tint = skyTint();
   if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, VW, VH); }
   drawLighting(darkness());
+  drawWeather();
 
   // filtro de cor quente (tom RDR)
   ctx.fillStyle = 'rgba(255,190,120,0.06)'; ctx.fillRect(0, 0, VW, VH);
@@ -2348,7 +2476,7 @@ function drawMinimap() {
   ctx.drawImage(miniMap, -player.x * MINI_SCALE, -player.y * MINI_SCALE);
   const mp = (x, y) => [(x - player.x) * MINI_SCALE, (y - player.y) * MINI_SCALE];
   // ícones
-  const icons = { saloon: '🍺', hotel: '🛏', store: '🛒', bank: '$', barber: '✂', church: '✝', sheriff: '★', stable: '🐴', post: '✉' };
+  const icons = { saloon: '🍺', hotel: '🛏', store: '🛒', bank: '$', barber: '✂', church: '✝', sheriff: '★', stable: '🐴', post: '✉', farm: '⌂' };
   ctx.font = '7px Georgia'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const b of BUILDINGS) {
     if (!icons[b.id]) continue;
@@ -2373,6 +2501,18 @@ function drawMinimap() {
     if (d > maxd) { bx *= maxd / d; by *= maxd / d; }
     ctx.fillStyle = '#d9b35c'; star(ctx, bx, by, 5, 2.2);
   }
+  const edgeMark = (x, y) => {
+    let [bx, by] = mp(x, y);
+    const d = Math.hypot(bx, by), maxd = R0 / zoom - 6;
+    if (d > maxd) { bx *= maxd / d; by *= maxd / d; }
+    return [bx, by];
+  };
+  if (G.job) { const [jx, jy] = edgeMark(G.job.x, G.job.y); ctx.fillStyle = '#e8c040'; ctx.fillRect(jx - 3, jy - 3, 6, 6); ctx.strokeStyle = '#3a2616'; ctx.lineWidth = 1; ctx.strokeRect(jx - 3, jy - 3, 6, 6); }
+  if (G.event) {
+    const ev = G.event, t = ev.type === 'thief' && ev.stage === 'chase' ? ev.thief : ev.victim;
+    if (t) { const [ex, ey] = edgeMark(t.x, t.y); ctx.fillStyle = '#e8c040'; ctx.font = 'bold 9px Georgia'; ctx.fillText('!', ex, ey); }
+  }
+  if (train.active) { const [tx, ty] = mp(train.x, TRACK_Y); ctx.fillStyle = '#1a1a1a'; ctx.fillRect(tx - 4, ty - 2, 8, 4); }
   for (const o of outlaws) if (o.alive && o.alert) { const [ox, oy] = mp(o.x, o.y); ctx.fillStyle = '#e02020'; ctx.beginPath(); ctx.arc(ox, oy, 1.8, 0, Math.PI * 2); ctx.fill(); }
   // jogador (seta)
   const a = player.vx || player.vy ? Math.atan2(player.vy, player.vx) : (player.dir > 0 ? 0 : Math.PI);
@@ -2399,6 +2539,499 @@ function drawMinimap() {
 }
 
 // ---------------------------------------------------------------------
+// Vida selvagem (caça)
+// ---------------------------------------------------------------------
+const ANIMAL = {
+  rabbit: { name: 'coelho', hp: 1, speed: 160, flee: 150, pelt: 'Pele de coelho', price: 0.75, meat: 1, r: 5, hw: 8, hh: 12 },
+  deer: { name: 'cervo', hp: 2, speed: 175, flee: 230, pelt: 'Pele de cervo', price: 2.5, meat: 2, r: 10, hw: 14, hh: 38 },
+  coyote: { name: 'coiote', hp: 2, speed: 150, flee: 0, pelt: 'Pele de coiote', price: 1.5, meat: 0, r: 7, hw: 11, hh: 20 },
+};
+const animals = [];
+function wildPoint(minFromPlayer) {
+  for (let k = 0; k < 60; k++) {
+    const x = 80 + Math.random() * (WORLD_W - 160), y = 100 + Math.random() * (WORLD_H - 250);
+    if (onRoadOrTown(x, y, 60) || collides(x, y, 12)) continue;
+    if (minFromPlayer && dist(x, y, player.x, player.y) < minFromPlayer) continue;
+    return { x, y };
+  }
+  return { x: 200, y: 300 };
+}
+function spawnAnimal(type, far) {
+  const p = wildPoint(far ? 900 : 0);
+  const sp = ANIMAL[type];
+  return { type, x: p.x, y: p.y, dir: Math.random() < 0.5 ? -1 : 1, phase: 0, moving: false, alive: true, hp: sp.hp,
+    tx: p.x, ty: p.y, wait: Math.random() * 3, stuck: 0, flee: 0, deadT: 0, skinned: false, biteT: 0,
+    buck: type === 'deer' && Math.random() < 0.45, hunting: false };
+}
+for (let i = 0; i < 16; i++) animals.push(spawnAnimal('rabbit'));
+for (let i = 0; i < 9; i++) animals.push(spawnAnimal('deer'));
+for (let i = 0; i < 4; i++) animals.push(spawnAnimal('coyote'));
+
+function updateAnimals(dt) {
+  for (let i = 0; i < animals.length; i++) {
+    const a = animals[i], sp = ANIMAL[a.type];
+    const d = dist(a.x, a.y, player.x, player.y);
+    if (!a.alive) {
+      a.deadT += dt;
+      if ((a.skinned || a.deadT > 120) && d > 900) animals[i] = spawnAnimal(a.type, true);
+      continue;
+    }
+    if (d > 1700) { a.moving = false; continue; } // longe demais: congela
+    a.biteT = Math.max(0, a.biteT - dt);
+    if (a.type === 'coyote') {
+      const hungry = isNight() || d < 240;
+      if (hungry && d < 430 && !G.sitting) {
+        if (!a.hunting) { a.hunting = true; sfx('growl', clamp(1 - d / 500, 0.2, 1)); }
+        steer(a, player.x - a.dir * 4, player.y, player.mounted ? sp.speed * 0.9 : sp.speed, dt, sp.r);
+        a.phase += dt * 16;
+        if (d < (player.mounted ? 34 : 22) && a.biteT <= 0) {
+          a.biteT = 1.3;
+          if (player.mounted) { horse.health = clamp(horse.health - 10, 0, 100); G.shake = 5; sfx('neigh', 0.6); }
+          else hitPlayer(0.6);
+        }
+        continue;
+      }
+      a.hunting = false;
+    } else {
+      const scare = sp.flee * (player.running || player.mounted ? 1.5 : 1);
+      if (d < scare) a.flee = Math.max(a.flee, 2.5);
+      if (a.flee > 0) {
+        a.flee -= dt;
+        const ang = Math.atan2(a.y - player.y, a.x - player.x) + Math.sin(performance.now() / 300 + i) * 0.4;
+        steer(a, a.x + Math.cos(ang) * 50, a.y + Math.sin(ang) * 50, sp.speed, dt, sp.r);
+        a.phase += dt * (a.type === 'rabbit' ? 14 : 12);
+        continue;
+      }
+    }
+    // pastando / vagando
+    if (a.wait > 0) { a.wait -= dt; a.moving = false; continue; }
+    const arrived = steer(a, a.tx, a.ty, sp.speed * 0.25, dt, sp.r);
+    a.phase += dt * 5;
+    if (arrived || a.stuck > 1.5) {
+      a.tx = clamp(a.x + R(-160, 160), 60, WORLD_W - 60); a.ty = clamp(a.y + R(-120, 120), 80, WORLD_H - 140);
+      if (onRoadOrTown(a.tx, a.ty, 20)) { a.tx = a.x; a.ty = a.y; }
+      a.wait = Math.random() * 5; a.stuck = 0;
+    }
+  }
+}
+function hitAnimal(a, dmg) {
+  a.hp -= dmg;
+  for (let k = 0; k < 6; k++) particles.push({ x: a.x, y: a.y - ANIMAL[a.type].hh / 2, vx: R(-50, 50), vy: R(-60, 10), life: 0.5, max: 0.5, color: '#8a0f0f', size: 2, g: 300 });
+  if (a.hp > 0) { a.flee = 4; return; }
+  a.alive = false; a.moving = false; a.deadT = 0;
+  particles.push({ x: a.x, y: a.y + 2, vx: 0, vy: 0, life: 40, max: 40, color: 'rgba(110,10,10,0.5)', size: ANIMAL[a.type].r + 4, pool: true });
+  G.deadEye = clamp(G.deadEye + 5, 0, 100);
+  G.hunts++;
+  if (G.hunts === 1) toast('Primeira caça', TOUCH.on ? 'Chegue perto do animal e toque em "Esfolar".' : 'Chegue perto do animal e use [E] para esfolar.', 'gold');
+}
+function skinAnimal(a) {
+  const sp = ANIMAL[a.type];
+  a.skinned = true;
+  G.pelts[sp.pelt] = (G.pelts[sp.pelt] || 0) + 1;
+  G.meat += sp.meat;
+  G.dirt = clamp(G.dirt + 0.08, 0, 1);
+  sfx('pickup');
+  toast('Esfolado', `${sp.pelt}${sp.meat ? ` e ${sp.meat} carne` : ''}. Venda peles no Armazém.`);
+}
+function peltCount() { return Object.values(G.pelts).reduce((a, b) => a + b, 0); }
+function peltValue() {
+  let v = 0;
+  for (const k in G.pelts) for (const t in ANIMAL) if (ANIMAL[t].pelt === k) v += ANIMAL[t].price * G.pelts[k];
+  return v;
+}
+
+function drawAnimal(c, a) {
+  const moving = a.moving && a.alive;
+  c.save();
+  c.translate(a.x, a.y);
+  c.fillStyle = 'rgba(0,0,0,0.22)'; ellipse(c, 0, 0, ANIMAL[a.type].r + 4, 3);
+  if (!a.alive) {
+    c.translate(0, -ANIMAL[a.type].hh * 0.35); c.scale(1, -1); c.translate(0, -ANIMAL[a.type].hh * 0.35);
+    if (a.skinned) c.filter = 'saturate(0.3) brightness(0.7)';
+  }
+  c.scale(a.dir || 1, 1);
+  if (a.type === 'rabbit') {
+    const hop = moving ? Math.abs(Math.sin(a.phase)) * 4 : 0;
+    c.translate(0, -hop);
+    c.fillStyle = '#8a7560'; ellipse(c, 0, -5, 6, 4.2);
+    c.fillStyle = '#9a8570'; ellipse(c, 5, -8, 3.2, 3);
+    c.fillStyle = '#7a6550'; ellipse(c, 3.5, -13, 1.2, 4); ellipse(c, 5.5, -13, 1.2, 4);
+    c.fillStyle = '#f0e8dc'; ellipse(c, -6, -5, 2, 2);
+    c.fillStyle = '#1a0f08'; c.fillRect(6, -9, 1.2, 1.2);
+  } else if (a.type === 'deer') {
+    const g = moving ? a.phase : 0, amp = moving ? (a.flee > 0 ? 6 : 2.5) : 0;
+    c.strokeStyle = '#7a5434'; c.lineWidth = 2.4; c.lineCap = 'round';
+    for (const [lx, ph] of [[-10, 0], [-6, Math.PI], [7, Math.PI / 2], [11, Math.PI * 1.5]]) {
+      const sw = Math.sin(g + ph) * amp;
+      c.beginPath(); c.moveTo(lx, -18); c.lineTo(lx + sw, 0); c.stroke();
+    }
+    c.fillStyle = '#a0724a'; ellipse(c, 0, -21, 15, 7);
+    c.fillStyle = '#d8c0a0'; ellipse(c, 1, -17, 10, 2.8);
+    c.fillStyle = '#f4ece0'; ellipse(c, -14, -23, 3, 3.5);
+    c.fillStyle = '#a0724a';
+    c.beginPath(); c.moveTo(9, -24); c.lineTo(15, -36); c.lineTo(19, -34); c.lineTo(15, -20); c.closePath(); c.fill();
+    ellipse(c, 19, -36, 5.5, 3.2);
+    c.fillStyle = '#1a0f08'; c.fillRect(21, -37.5, 1.4, 1.4); ellipse(c, 24, -35.5, 1.3, 1.1);
+    c.fillStyle = '#8a6040'; ellipse(c, 15, -40, 1.5, 3);
+    if (a.buck) {
+      c.strokeStyle = '#d8c8a8'; c.lineWidth = 1.4;
+      c.beginPath(); c.moveTo(17, -39); c.lineTo(13, -48); c.lineTo(9, -51); c.moveTo(14, -46); c.lineTo(17, -52);
+      c.moveTo(19, -39); c.lineTo(21, -48); c.lineTo(19, -53); c.moveTo(21, -46); c.lineTo(25, -50); c.stroke();
+    }
+  } else {
+    const s = moving ? Math.sin(a.phase) * 3 : 0;
+    c.strokeStyle = '#6a5a44'; c.lineWidth = 2.2; c.lineCap = 'round';
+    for (const [lx, sg] of [[-6, 1], [-3, -1], [4, -1], [7, 1]]) { c.beginPath(); c.moveTo(lx, -8); c.lineTo(lx + s * sg, -1); c.stroke(); }
+    c.fillStyle = '#9a8a70'; ellipse(c, 0, -10, 10, 4.5);
+    c.fillStyle = '#d8ccb0'; ellipse(c, 2, -8, 5, 2);
+    c.fillStyle = '#9a8a70'; ellipse(c, 11, -14, 5, 3.5);
+    c.beginPath(); c.moveTo(14, -14); c.lineTo(19, -12); c.lineTo(14, -11); c.fill();
+    c.fillStyle = '#6a5a44'; c.beginPath(); c.moveTo(9, -17); c.lineTo(10, -22); c.lineTo(12, -17); c.fill();
+    c.fillStyle = a.hunting ? '#e8c040' : '#1a0f08'; c.fillRect(13, -15, 1.6, 1.4);
+    c.strokeStyle = '#8a7a60'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(-9, -11); c.quadraticCurveTo(-15, -9, -16, -4); c.stroke();
+  }
+  c.restore();
+}
+
+// ---------------------------------------------------------------------
+// Trem
+// ---------------------------------------------------------------------
+// Fazendeiros que ficam perto das fazendas
+for (const f of FARMS) {
+  const n = makeNPC(f.doorX + 40, f.doorY + 30);
+  n.home = { x: f.doorX, y: f.doorY + 30 };
+  n.name = f.id === 'farm' && f.name === 'RANCHO' ? 'Rancheiro Clem' : 'Sr. Braithwaite';
+  n.female = false; n.coat = '#6a5a3a'; n.pants = '#3a4a6a'; n.hat = '#b8a070';
+}
+
+const TRAIN_CARS = ['loco', 'tender', 'passenger', 'passenger', 'box', 'box', 'caboose'];
+const CAR_W = 104;
+const TRAIN_LEN = TRAIN_CARS.length * (CAR_W + 8);
+const train = { active: false, t: 25, x: 0, dir: 1, speed: 300, whistled: false, hitT: 0 };
+function updateTrain(dt) {
+  train.hitT = Math.max(0, train.hitT - dt);
+  if (!train.active) {
+    train.t -= dt;
+    if (train.t <= 0) {
+      train.active = true; train.dir = Math.random() < 0.5 ? 1 : -1; train.whistled = false;
+      train.x = train.dir > 0 ? -300 : WORLD_W + 300;
+    }
+    return;
+  }
+  train.x += train.dir * train.speed * dt;
+  const back = train.x - train.dir * TRAIN_LEN;
+  const lo = Math.min(train.x, back), hi = Math.max(train.x, back);
+  if (!train.whistled && Math.abs(player.y - TRACK_Y) < 800 && Math.abs(train.x - player.x) < 1100) { train.whistled = true; sfx('train'); }
+  // fumaça da locomotiva
+  if (Math.abs(train.x - cam.x) < 1400 && Math.random() < 0.7) {
+    particles.push({ x: train.x - train.dir * 30, y: TRACK_Y - 62, vx: -train.dir * R(40, 90), vy: R(-50, -25), life: 2.2, max: 2.2, color: 'rgba(70,70,70,0.4)', size: R(6, 10), smoke: true });
+  }
+  // atropelamento
+  const onTrack = (e, pad) => e.x > lo - pad && e.x < hi + pad && e.y > TRACK_Y - 34 && e.y < TRACK_Y + 10;
+  if (onTrack(player, player.mounted ? 24 : 8) && train.hitT <= 0) {
+    train.hitT = 1.2;
+    const up = player.y < TRACK_Y - 12;
+    const ny = up ? TRACK_Y - 44 : TRACK_Y + 24;
+    if (player.mounted) { horse.y = ny; horse.health = clamp(horse.health - 30, 0, 100); } else player.y = ny;
+    player.y = ny;
+    hitPlayer(2.6);
+    toast('Cuidado com o trem!', 'Olhe para os dois lados antes de cruzar os trilhos.');
+  }
+  for (const a of animals) if (a.alive && onTrack(a, 6)) { a.y += a.y < TRACK_Y - 12 ? -30 : 30; }
+  if ((train.dir > 0 && back > WORLD_W + 200) || (train.dir < 0 && back < -200)) { train.active = false; train.t = R(70, 140); }
+}
+function drawTrain(c) {
+  if (!train.active) return;
+  const y = TRACK_Y - 6;
+  for (let i = 0; i < TRAIN_CARS.length; i++) {
+    const kind = TRAIN_CARS[i];
+    const cx = train.x - train.dir * (i * (CAR_W + 8) + CAR_W / 2);
+    const x0 = cx - CAR_W / 2;
+    c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(x0 + 6, y - 2, CAR_W, 8);
+    // rodas
+    c.fillStyle = '#1a1a1a';
+    for (const wx of [x0 + 16, x0 + 34, x0 + CAR_W - 34, x0 + CAR_W - 16]) { c.beginPath(); c.arc(wx, y - 6, 7, 0, Math.PI * 2); c.fill(); }
+    c.fillStyle = '#6a2a1a'; for (const wx of [x0 + 16, x0 + CAR_W - 16]) { c.beginPath(); c.arc(wx, y - 6, 2.5, 0, Math.PI * 2); c.fill(); }
+    if (kind === 'loco') {
+      c.save(); c.translate(cx, 0); c.scale(train.dir, 1); c.translate(-cx, 0);
+      c.fillStyle = '#1e1e22'; rrect(c, x0 + 6, y - 44, 64, 30, 12);
+      c.fillStyle = '#b8902a'; c.fillRect(x0 + 20, y - 44, 3, 30); c.fillRect(x0 + 44, y - 44, 3, 30);
+      c.fillStyle = '#2a2a2e'; c.fillRect(x0 + 50, y - 70, 12, 26); c.fillRect(x0 + 46, y - 74, 20, 6);
+      c.fillStyle = '#6a1a14'; c.fillRect(x0 - 2, y - 58, 34, 44); c.fillStyle = '#2a0a08'; c.fillRect(x0 - 4, y - 62, 38, 6);
+      c.fillStyle = isNight() ? '#ffd27a' : '#9aa8b0'; c.fillRect(x0 + 6, y - 52, 16, 12);
+      c.fillStyle = '#b8902a'; c.beginPath(); c.moveTo(x0 + CAR_W, y - 6); c.lineTo(x0 + 70, y - 14); c.lineTo(x0 + 70, y); c.fill();
+      c.fillStyle = '#f0e0a0'; ellipse(c, x0 + 74, y - 34, 5, 5);
+      c.restore();
+    } else {
+      const col = { tender: '#2a2a2e', passenger: '#3a5a3a', box: '#7a3a22', caboose: '#9a2a1e' }[kind];
+      c.fillStyle = col; c.fillRect(x0 + 2, y - (kind === 'tender' ? 34 : 50), CAR_W - 4, kind === 'tender' ? 22 : 38);
+      c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(x0, y - (kind === 'tender' ? 36 : 54), CAR_W, 4);
+      if (kind === 'passenger' || kind === 'caboose') {
+        c.fillStyle = isNight() ? '#f5c46a' : '#c8d4d8';
+        for (let wx = x0 + 10; wx < x0 + CAR_W - 14; wx += 18) c.fillRect(wx, y - 44, 10, 12);
+      }
+      if (kind === 'box') { c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 1; for (let wx = x0 + 8; wx < x0 + CAR_W; wx += 8) { c.beginPath(); c.moveTo(wx, y - 50); c.lineTo(wx, y - 12); c.stroke(); } }
+      if (kind === 'tender') { c.fillStyle = '#111'; ellipse(c, cx, y - 36, CAR_W / 2 - 8, 6); }
+      if (kind === 'caboose') { c.fillStyle = '#7a1a14'; c.fillRect(cx - 16, y - 64, 32, 12); }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+// Eventos aleatórios na cidade
+// ---------------------------------------------------------------------
+let eventTimer = 45;
+function inTown(x, y) { return x > TOWN.x && x < TOWN.x + TOWN.w && y > TOWN.y && y < TOWN.y + TOWN.h; }
+function updateEvents(rdt, dt) {
+  const ev = G.event;
+  if (!ev) {
+    if (!inTown(player.x, player.y) || G.menu || G.sitting || G.wanted > 0) return;
+    eventTimer -= rdt;
+    if (eventTimer <= 0) { eventTimer = R(70, 150); startEvent(); }
+    return;
+  }
+  const v = ev.victim;
+  if (!v || !v.alive) {
+    if (ev.type === 'hurt' || ev.stage !== 'done') toast('Evento encerrado', 'Tarde demais para ajudar.');
+    return endEvent();
+  }
+  if (ev.type === 'thief') {
+    const t = ev.thief;
+    if (ev.stage === 'chase' && t.alive) {
+      const d = dist(t.x, t.y, player.x, player.y);
+      if (!ev.goal || dist(t.x, t.y, ev.goal.x, ev.goal.y) < 30 || t.stuck > 1) {
+        const ex = t.x < player.x ? STREET.x - 250 : STREET.x + STREET.w + 250;
+        ev.goal = { x: ex, y: R(STREET.y + 30, STREET.y + STREET.h - 30) };
+        t.stuck = 0;
+      }
+      steer(t, ev.goal.x, ev.goal.y, t.speed, dt, t.r);
+      t.phase += dt * 15;
+      if (d < (player.mounted ? 36 : 24)) {
+        t.caught = true; ev.stage = 'return';
+        say(t, pick(['Tá bom, tá bom! Toma!', 'Não me machuque!', 'Droga!']), 2);
+        say(player, 'Te peguei!', 1.5);
+        toast('Bolsa recuperada', `Devolva a bolsa para ${v.name}.`, 'gold');
+        t.speed = 110;
+      } else if (d > 1100 || t.x < STREET.x - 200 || t.x > STREET.x + STREET.w + 200) {
+        toast('O ladrão escapou', 'Ele sumiu no deserto.');
+        return endEvent();
+      }
+    } else if (t.caught && t.alive) {
+      // foge sem a bolsa
+      steer(t, t.x < 2000 ? -200 : WORLD_W + 200, t.y, 120, dt, t.r); t.phase += dt * 14;
+    }
+  } else if (ev.type === 'hurt') {
+    ev.t -= rdt;
+    if (ev.t <= 0) { v.hurt = false; say(v, 'Acho que consigo andar...'); toast('Evento encerrado', 'Alguém levou o ferido ao médico.'); return endEvent(); }
+    if (Math.random() < rdt * 0.2 && dist(v.x, v.y, player.x, player.y) < 400) say(v, pick(['Socorro... fui picado por uma cobra!', 'Alguém me ajude...', 'Senhor! Por favor!']), 3);
+  }
+}
+function startEvent() {
+  const cands = npcs.filter((n) => n.alive && !n.hurt && !n.home && dist(n.x, n.y, player.x, player.y) > 150 && dist(n.x, n.y, player.x, player.y) < 520);
+  if (!cands.length) return;
+  const v = pick(cands);
+  if (Math.random() < 0.55) {
+    const t = {
+      kind: 'thief', x: v.x + 14, y: v.y, dir: 1, phase: 0, moving: false, r: 8, alive: true, deadT: 0, speed: 138, stuck: 0,
+      coat: '#3a3530', shirt: '#7a6a5a', pants: '#2a2622', hat: '#4a3a2a', skin: pick(SKINS), bandana: '#6a5a2a',
+    };
+    for (let k = 0; k < 10 && collides(t.x, t.y, 8); k++) t.x += 10;
+    G.event = { type: 'thief', victim: v, thief: t, stage: 'chase' };
+    v.flee = 2; v.wait = 0;
+    say(v, 'Socorro! Ladrão! Ele levou minha bolsa!', 3);
+    toast('Ladrão!', `Alguém roubou a bolsa de ${v.name}. ${TOUCH.on ? 'Corra atrás dele!' : 'Corra atrás dele (Shift)!'}`, 'gold');
+  } else {
+    v.hurt = true; v.moving = false; v.flee = 0;
+    G.event = { type: 'hurt', victim: v, t: 150 };
+    say(v, 'Socorro... fui picado por uma cobra!', 3.5);
+    toast('Alguém precisa de ajuda', `${v.name} está caído na rua.`, 'gold');
+  }
+}
+function endEvent() {
+  const ev = G.event;
+  if (ev && ev.victim) ev.victim.hurt = false;
+  G.event = null;
+}
+function thiefShot() {
+  const ev = G.event;
+  if (!ev) return;
+  changeHonor(-2, 'Havia jeitos mais gentis de parar um ladrão de bolsas.');
+}
+function eventInteractions(consider, px, py) {
+  const ev = G.event;
+  if (!ev) return;
+  const v = ev.victim;
+  if (ev.type === 'thief') {
+    const t = ev.thief;
+    if (!t.alive && ev.stage === 'chase') consider(dist(px, py, t.x, t.y) - 10, 40, { e: { label: 'Pegar a bolsa', fn: () => { ev.stage = 'return'; sfx('pickup'); toast('Bolsa recuperada', `Devolva a bolsa para ${v.name}.`, 'gold'); } } });
+    if (ev.stage === 'return') consider(dist(px, py, v.x, v.y) - 15, 50, {
+      e: { label: `Devolver a bolsa a ${v.name}`, fn: () => {
+        const r = Math.round(R(2, 5) * 100) / 100;
+        v.wait = 3; v.dir = player.x < v.x ? -1 : 1;
+        say(v, pick(['Muito obrigado, senhor! Tome, é seu.', 'Deus lhe pague! Aceite isto.', 'Um herói de verdade!']), 3);
+        earn(r); changeHonor(6, 'Você devolveu a bolsa roubada.');
+        banner('BOLSA DEVOLVIDA', `+${fmtMoney(r)} de recompensa`);
+        endEvent();
+      } },
+      f: { label: 'Ficar com a bolsa', fn: () => {
+        say(v, pick(['Ei! Essa bolsa é minha!', 'Você é tão ladrão quanto ele!']), 3);
+        earn(6); changeHonor(-8, 'Você ficou com a bolsa roubada.');
+        endEvent();
+      } },
+    });
+  } else if (ev.type === 'hurt') {
+    consider(dist(px, py, v.x, v.y) - 15, 50, {
+      e: { label: `Ajudar ${v.name}`, fn: () => {
+        if (G.tonic > 0) G.tonic--;
+        else if (G.food > 0) G.food--;
+        else { toast('Sem remédio', 'Você precisa de um tônico ou de feijão para ajudar (compre no Armazém).'); return; }
+        sfx('drink');
+        say(v, pick(['Obrigado... já me sinto melhor.', 'O senhor salvou minha vida!']), 3);
+        changeHonor(6, `Você ajudou ${v.name}.`);
+        if (Math.random() < 0.6) { const r = Math.round(R(1, 4) * 100) / 100; earn(r); toast('Gratidão', `${v.name} te deu ${fmtMoney(r)}.`, 'gold'); }
+        v.hurt = false; v.wait = 2;
+        endEvent();
+      } },
+      f: { label: 'Roubar', fn: () => {
+        say(v, 'Não... por favor...', 3);
+        earn(2.5); changeHonor(-10, 'Você roubou um homem ferido.');
+      } },
+    });
+  }
+}
+
+// ---------------------------------------------------------------------
+// Trabalhos de entrega (Correio)
+// ---------------------------------------------------------------------
+const RECIPIENTS = ['Sra. O\'Shea', 'Sr. Downes', 'Viúva Harper', 'Doutor Barnes', 'Pastor Swanson', 'Família Braithwaite', 'Tio Abe', 'Srta. Kate'];
+function takeJob() {
+  const post = BUILDINGS.find((b) => b.id === 'post');
+  const spots = [];
+  for (const b of BUILDINGS) if ((b.id === 'house' || b.id === 'farm' || b.id === 'church') && dist(b.doorX, b.doorY, post.doorX, post.doorY) > 300) spots.push({ x: b.doorX, y: b.doorY, where: b.id === 'farm' ? b.owner : b.id === 'church' ? 'a igreja' : 'uma casa na rua principal' });
+  spots.push({ x: CAMP.x - 40, y: CAMP.y + 20, where: 'o acampamento a leste' });
+  const s = pick(spots);
+  const d = dist(s.x, s.y, post.doorX, post.doorY);
+  G.job = { x: s.x, y: s.y, where: s.where, name: pick(RECIPIENTS), reward: Math.round((1 + d / 700) * 100) / 100 };
+  toast('Encomenda', `Entregue para ${G.job.name} em ${G.job.where}. Pagamento: ${fmtMoney(G.job.reward)}.`, 'gold');
+}
+function deliverJob() {
+  const j = G.job;
+  G.job = null; G.jobsDone++;
+  earn(j.reward); changeHonor(1, null);
+  say(player, 'Encomenda para você.', 2);
+  banner('ENTREGA FEITA', `+${fmtMoney(j.reward)}`);
+}
+
+// ---------------------------------------------------------------------
+// Clima
+// ---------------------------------------------------------------------
+const drops = [];
+let rainNode = null;
+function updateWeather(dt, tRate) {
+  const w = G.wx;
+  w.t -= dt * tRate;
+  if (w.t <= 0) {
+    const r = Math.random();
+    const prev = w.kind;
+    w.kind = r < 0.55 ? 'clear' : r < 0.78 ? 'cloudy' : 'rain';
+    w.t = R(3, 7);
+    if (w.kind === 'rain' && prev !== 'rain' && G.started) toast('O tempo virou', 'Começou a chover. A chuva lava a poeira.');
+  }
+  w.rain = lerp(w.rain, w.kind === 'rain' ? 1 : 0, clamp(dt * 0.25, 0, 1));
+  w.cloud = lerp(w.cloud, w.kind === 'clear' ? 0 : 1, clamp(dt * 0.2, 0, 1));
+  w.flash = Math.max(0, w.flash - dt * 3);
+  if (w.rain > 0.7 && Math.random() < dt * 0.05) { w.flash = 1; setTimeout(() => sfx('thunder'), 400 + Math.random() * 1500); }
+  if (w.rain > 0.05) G.dirt = clamp(G.dirt - dt * 0.004 * w.rain, 0, 1);
+  // som da chuva
+  if (AC && MASTER) {
+    if (!rainNode) {
+      const src = AC.createBufferSource(); src.buffer = noiseBuf(2); src.loop = true;
+      const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1400;
+      const g = AC.createGain(); g.gain.value = 0;
+      src.connect(f).connect(g).connect(MASTER); src.start();
+      rainNode = g;
+    }
+    rainNode.gain.value = w.rain * 0.1;
+  }
+}
+function drawWeather() {
+  const w = G.wx;
+  if (w.cloud > 0.02) { ctx.fillStyle = `rgba(40,48,64,${0.22 * w.cloud})`; ctx.fillRect(0, 0, VW, VH); }
+  if (w.rain > 0.02) {
+    const n = Math.floor(260 * w.rain);
+    while (drops.length < n) drops.push({ x: Math.random() * VW, y: Math.random() * VH, s: 700 + Math.random() * 500, l: 10 + Math.random() * 14 });
+    ctx.strokeStyle = `rgba(190,205,225,${0.45 * w.rain})`; ctx.lineWidth = 1;
+    ctx.beginPath();
+    const dt = 1 / 60;
+    for (let i = 0; i < n; i++) {
+      const d = drops[i];
+      d.y += d.s * dt; d.x -= d.s * dt * 0.18;
+      if (d.y > VH) { d.y = -20; d.x = Math.random() * (VW + 100); }
+      ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.l * 0.18, d.y + d.l);
+    }
+    ctx.stroke();
+  }
+  if (w.flash > 0) { ctx.fillStyle = `rgba(230,235,255,${w.flash * 0.35})`; ctx.fillRect(0, 0, VW, VH); }
+}
+
+// ---------------------------------------------------------------------
+// Som liga/desliga
+// ---------------------------------------------------------------------
+function toggleMute() {
+  G.muted = !G.muted;
+  if (MASTER) MASTER.gain.value = G.muted ? 0 : 1;
+  $('muteBtn').textContent = G.muted ? '🔇' : '🔊';
+  toast(G.muted ? 'Som desligado' : 'Som ligado', '');
+}
+
+// ---------------------------------------------------------------------
+// Salvar / carregar (fica só neste navegador)
+// ---------------------------------------------------------------------
+const SAVE_KEY = 'poeira-vermelha-save-v1';
+const SAVE_FIELDS = ['time', 'day', 'money', 'bank', 'honor', 'healthCore', 'staminaCore', 'deadEyeCore', 'ammo', 'reserve', 'food', 'tonic',
+  'herbs', 'carrots', 'beard', 'dirt', 'wanted', 'bottleHits', 'pelts', 'meat', 'hunts', 'prayedDay', 'gotLetter', 'job', 'jobsDone', 'muted'];
+function hasSave() { try { return !!localStorage.getItem('poeira-vermelha-save-v1'); } catch (e) { return false; } }
+function saveGame() {
+  if (!G.started || G.fading) return;
+  const data = { v: 1, p: { x: Math.round(player.x), y: Math.round(player.y) }, horse: { bond: horse.bond, x: Math.round(horse.x), y: Math.round(horse.y) }, dogBond: dog ? dog.bond : 0 };
+  for (const k of SAVE_FIELDS) data[k] = G[k];
+  if (G.bounty && G.bounty.stage === 'return') data.bounty = { name: G.bounty.name, reward: G.bounty.reward, stage: 'return', x: 0, y: 0 };
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* armazenamento indisponível */ }
+}
+function loadGame() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { data = null; }
+  if (!data || data.v !== 1) return false;
+  for (const k of SAVE_FIELDS) if (data[k] !== undefined) G[k] = data[k];
+  if (data.bounty) G.bounty = data.bounty;
+  if (data.p && !collides(data.p.x, data.p.y, player.r)) { player.x = data.p.x; player.y = data.p.y; }
+  if (data.horse) {
+    horse.bond = data.horse.bond || 1;
+    if (!collides(data.horse.x, data.horse.y, horse.r)) { horse.x = data.horse.x; horse.y = data.horse.y; }
+  }
+  if (dog && data.dogBond) dog.bond = data.dogBond;
+  cam.x = player.x; cam.y = player.y;
+  return true;
+}
+let saveTimer = 0;
+function autosave(rdt) {
+  saveTimer += rdt;
+  if (saveTimer > 20) { saveTimer = 0; saveGame(); }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
+window.addEventListener('pagehide', saveGame);
+function updateStartButton() {
+  const btn = document.getElementById('startBtn');
+  const nb = document.getElementById('newGameBtn');
+  if (!btn) return;
+  const saved = hasSave();
+  btn.textContent = saved ? 'Continuar jornada' : TOUCH.on ? 'Toque para começar' : 'Pressione ENTER para começar';
+  if (nb) nb.hidden = !saved;
+}
+updateStartButton();
+
+// ---------------------------------------------------------------------
 // Loop
 // ---------------------------------------------------------------------
 let last = performance.now();
@@ -2421,4 +3054,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Exposto para depuração / testes
-window.__game = { G, player, horse, npcs, outlaws, BUILDINGS, cam, startGame };
+window.__game = { G, player, horse, npcs, outlaws, BUILDINGS, cam, startGame, animals, train, startEvent, TRACK_Y, FARMS, saveGame };

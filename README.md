@@ -42,6 +42,7 @@ Funciona na vertical e na horizontal; a horizontal mostra mais do mapa.
 | T | Beber tônico |
 | G | Tocar o chapéu |
 | Tab | Alforje (inventário) |
+| M | Som liga/desliga |
 
 ## O que dá para fazer
 
@@ -56,6 +57,19 @@ Funciona na vertical e na horizontal; a horizontal mostra mais do mapa.
 - **Correio**: ver cartas e enviar telegramas.
 - **Na rua**: cumprimentar ou provocar moradores, acariciar o cachorro (ele passa a te seguir), sentar nos bancos, lavar o rosto no cocho, beber água do poço, atirar em garrafas atrás do xerife.
 - **Fora da cidade**: colher ervas e acampar na fogueira a leste.
+
+## Novidades
+
+- **Progresso salvo** automaticamente neste navegador. Na tela inicial aparecem *Continuar jornada* e *Novo jogo*.
+- **Caça**: coelhos, cervos e coiotes pelos arredores. Esfole o animal ([E] ou botão), venda as peles no Armazém e cozinhe a carne na fogueira do acampamento. Coiotes atacam, principalmente à noite.
+- **Eventos na cidade**:
+  - Um **ladrão** rouba a bolsa de alguém. Alcance-o (ou atire) e escolha entre devolver a bolsa (+honra, recompensa) ou ficar com ela (−honra).
+  - Um morador **picado por cobra** pede ajuda. Dê a ele um tônico ou feijão, ou roube-o.
+- **Entregas** pelo Correio: leve encomendas para casas, a igreja, o acampamento ou as duas **fazendas** novas (Braithwaite ao norte, Rancho Esmeralda ao sul).
+- **Fazendas**: ajude na lida por $1.50, compre leite ou ovos.
+- **Trem** passando pela ferrovia ao sul. Não fique nos trilhos!
+- **Clima**: céu nublado e chuva com trovões. A chuva lava a sujeira.
+- **Som** liga/desliga (botão 🔊 ou tecla M).
 
 ## Sistemas
 
