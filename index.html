@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Poeira Vermelha</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rye&family=Crimson+Text:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="stats">
+      <div id="clock">09:00</div>
+      <div id="money">$0.00</div>
+      <div id="ammo">6 / 24</div>
+    </div>
+    <div id="honor">
+      <span class="lbl">HONRA</span>
+      <div class="bar"><div class="mid"></div><div id="honorFill"></div></div>
+    </div>
+    <div id="objective"></div>
+    <div id="toasts"></div>
+    <div id="prompts"></div>
+    <div id="banner"></div>
+    <div id="menu" class="hidden">
+      <div class="menu-title" id="menuTitle"></div>
+      <div class="menu-sub" id="menuSub"></div>
+      <ul id="menuList"></ul>
+      <div class="menu-foot">[↑/↓] Escolher &nbsp; [Enter/E] Confirmar &nbsp; [Esc] Sair</div>
+    </div>
+    <div id="inventory" class="hidden"></div>
+  </div>
+
+  <!-- Title / help screen -->
+  <div id="title">
+    <div class="title-inner">
+      <h1>POEIRA<br>VERMELHA</h1>
+      <p class="tag">Novo Hanover, 1899 — a cidade de Vale Esperança</p>
+      <div class="controls">
+        <div><b>WASD / Setas</b> Andar</div>
+        <div><b>Shift</b> Correr / Galopar</div>
+        <div><b>E</b> Interagir</div>
+        <div><b>F</b> Ação secundária</div>
+        <div><b>Clique esq.</b> Atirar</div>
+        <div><b>Botão dir.</b> Mirar</div>
+        <div><b>R</b> Recarregar</div>
+        <div><b>Q</b> Olho Morto</div>
+        <div><b>H</b> Assobiar p/ cavalo</div>
+        <div><b>C</b> Comer feijão</div>
+        <div><b>G</b> Tocar o chapéu</div>
+        <div><b>Tab</b> Alforje</div>
+      </div>
+      <button id="startBtn">Pressione ENTER para começar</button>
+    </div>
+  </div>
+
+  <div id="fade"><div id="fadeText"></div></div>
+
+  <script src="game.js"></script>
+</body>
+</html>
