@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1a120b">
+  <title>Poeira Vermelha 3D</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rye&family=Crimson+Text:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="hud" hidden>
+    <canvas id="mini" width="150" height="150"></canvas>
+    <div id="stats">
+      <div id="clock">Dia 1 · 17:00</div>
+      <div id="money">$12.50</div>
+      <div id="ammo">6 / 36</div>
+    </div>
+    <div id="cross"></div>
+    <div id="bubbles"></div>
+    <div id="toasts"></div>
+    <div id="prompts"></div>
+    <div id="banner"></div>
+    <div id="menu" hidden>
+      <div class="menu-title" id="menuTitle"></div>
+      <div class="menu-sub" id="menuSub"></div>
+      <ul id="menuList"></ul>
+      <div class="menu-foot">[↑/↓] Escolher · [Enter/E] Confirmar · [Esc] Sair</div>
+    </div>
+    <button id="muteBtn" class="round" data-key="KeyM" aria-label="Som">🔊</button>
+    <div id="touchUI">
+      <div id="joy"><div id="joyKnob"></div></div>
+      <button class="tb fire" data-key="Shoot" aria-label="Atirar">🔫</button>
+      <button class="tb reload" data-key="KeyR" aria-label="Recarregar">↻</button>
+      <div id="lookHint">Arraste aqui para olhar ⟲</div>
+    </div>
+  </div>
+
+  <div id="title">
+    <div class="title-inner">
+      <h1>POEIRA<br>VERMELHA</h1>
+      <p class="tag">Vale Esperança, 1899 — agora em três dimensões</p>
+      <div class="controls touch-controls">
+        <div><b>Esquerda</b> Arraste para andar (até a borda = correr)</div>
+        <div><b>Direita</b> Arraste para girar a câmera</div>
+        <div><b>Botões</b> Aparecem perto de portas, pessoas e do cavalo</div>
+        <div><b>🔫</b> Atirar (mira automática nas garrafas)</div>
+      </div>
+      <div class="controls key-controls">
+        <div><b>WASD</b> Andar</div>
+        <div><b>Mouse</b> Olhar (clique para travar)</div>
+        <div><b>Shift</b> Correr / Galopar</div>
+        <div><b>E</b> Interagir / Montar</div>
+        <div><b>H</b> Assobiar p/ cavalo</div>
+        <div><b>Botão dir.</b> Mirar</div>
+        <div><b>Clique</b> Atirar</div>
+        <div><b>R</b> Recarregar</div>
+        <div><b>M</b> Som</div>
+        <div><b>Esc</b> Soltar o mouse</div>
+      </div>
+      <div class="quality" role="group" aria-label="Qualidade gráfica">
+        <span>Gráficos</span>
+        <button data-q="baixa">Leve</button>
+        <button data-q="media">Médio</button>
+        <button data-q="alta">Alto</button>
+      </div>
+      <button id="startBtn" disabled>Carregando o velho oeste…</button>
+      <p id="loadMsg" class="small"></p>
+    </div>
+  </div>
+
+  <div id="fade"><div id="fadeText"></div></div>
+
+  <script>
+    // Se a biblioteca 3D não carregar (sem internet, navegador antigo), avisa em vez de ficar travado.
+    setTimeout(function () {
+      if (!window.__pv3dReady) {
+        var m = document.getElementById('loadMsg');
+        if (m && !m.textContent) m.textContent = 'Ainda carregando… Se não abrir, verifique a internet ou tente outro navegador (Chrome ou Safari atualizados).';
+      }
+    }, 12000);
+  </script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

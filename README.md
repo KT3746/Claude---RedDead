@@ -6,6 +6,21 @@ bebe no saloon, cuida do seu cavalo e caça recompensas.
 
 Feito com HTML5 Canvas e JavaScript puro, sem dependências nem etapa de build.
 
+## Versão 3D (pasta `3d/`)
+
+Uma versão em terceira pessoa, feita com [Three.js](https://threejs.org) (WebGL), com pôr do sol realista, sombras, lampiões à noite, mesas vermelhas no horizonte, cavalo com galope, moradores e estande de tiro. Tudo é gerado por código, sem modelos 3D externos.
+
+- **Computador:** WASD para andar, mouse para olhar (clique na tela para travar o mouse), Shift para correr, E para interagir, H para chamar o cavalo, botão direito para mirar, clique para atirar.
+- **Celular:** arraste à esquerda para andar e à direita para girar a câmera. O botão 🔫 atira com mira automática.
+- **Gráficos:** na tela inicial, escolha Leve, Médio ou Alto. No celular, comece pelo Médio.
+
+Para rodar localmente, a pasta precisa ser servida por um servidor (módulos JavaScript não abrem direto do arquivo):
+
+```bash
+python3 -m http.server 8000
+# depois abra http://localhost:8000/3d/
+```
+
 ## Como jogar
 
 Abra o `index.html` no navegador. Se preferir, rode um servidor local:
