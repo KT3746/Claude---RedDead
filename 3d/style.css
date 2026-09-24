@@ -239,3 +239,6 @@ body.touch .key-controls { display: none; }
   body.touch #objective { top: auto; bottom: calc(112px + env(safe-area-inset-bottom)); font-size: 14px; max-width: 60vw; }
 }
 @media (prefers-reduced-motion: reduce) { #lock.hostile { animation: none; } }
+
+#brightBtn { top: calc(104px + env(safe-area-inset-top)); right: calc(58px + env(safe-area-inset-right)); color: #f4d27a; font-size: 18px; }
+.quality.bright { margin-top: 8px; }

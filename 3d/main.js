@@ -646,6 +646,16 @@ const moonLight = new THREE.DirectionalLight(0x8fa6d8, 0);
 scene.add(moonLight); scene.add(moonLight.target);
 const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x8a6440, 0.8);
 scene.add(hemi);
+// Luz ambiente e luz de preenchimento que acompanha a câmera: evitam silhuetas pretas
+const ambient = new THREE.AmbientLight(0xfff1e0, 0.3);
+scene.add(ambient);
+const fill = new THREE.DirectionalLight(0xffe8d0, 0.6);
+scene.add(fill); scene.add(fill.target);
+// Brilho escolhido pelo jogador
+const BRIGHT = { normal: 1, claro: 1.3, max: 1.65 };
+const BRIGHT_NAMES = { normal: 'Normal', claro: 'Claro', max: 'Máximo' };
+let brightName = store.get('pv3d-bright');
+if (!BRIGHT[brightName]) brightName = 'claro';
 
 const moon = new THREE.Mesh(new THREE.SphereGeometry(40, 20, 14), new THREE.MeshBasicMaterial({ color: 0xf4f0e0, fog: false }));
 moon.userData.dynamic = true;
@@ -680,8 +690,9 @@ for (let i = 0; i < Q.lights; i++) {
 const muzzle = new THREE.PointLight(0xffc070, 0, 8, 2);
 scene.add(muzzle);
 
-const fogDay = new THREE.Color('#d3b690'), fogGold = new THREE.Color('#d9895a'), fogNight = new THREE.Color('#121626'), tmpC = new THREE.Color();
+const fogDay = new THREE.Color('#d3b690'), fogGold = new THREE.Color('#d9895a'), fogNight = new THREE.Color('#222a40'), tmpC = new THREE.Color();
 const sunDir = new THREE.Vector3();
+const TMP_FILL = new THREE.Vector3();
 let nightK = 0;
 function updateSky() {
   const t = G.time;
@@ -695,22 +706,30 @@ function updateSky() {
   nightK = 1 - smoothstep(-6, 4, elev);
   const starK = 1 - smoothstep(-12, -3, elev);
 
-  sun.intensity = 3.2 * smoothstep(-1, 10, elev);
+  const BR = BRIGHT[brightName];
+  sun.intensity = 3.6 * smoothstep(-1, 10, elev);
   sun.color.set('#ff9a50').lerp(tmpC.set('#fff3e2'), smoothstep(2, 35, elev));
   const P = anchor();
   sun.position.set(P.x + sunDir.x * 90, P.y + Math.max(sunDir.y, 0.05) * 90, P.z + sunDir.z * 90);
   sun.target.position.set(P.x, P.y, P.z);
   const moonDir = sunDir.clone().multiplyScalar(-1); moonDir.y = Math.abs(moonDir.y) * 0.8 + 0.25; moonDir.normalize();
-  moonLight.intensity = 0.55 * nightK;
+  moonLight.intensity = 1.1 * nightK * BR;
   moonLight.position.set(P.x + moonDir.x * 80, P.y + moonDir.y * 80, P.z + moonDir.z * 80);
   moonLight.target.position.set(P.x, P.y, P.z);
   moon.position.copy(camera.position).addScaledVector(moonDir, 2200);
   moon.visible = nightK > 0.05;
 
-  hemi.intensity = lerp(0.22, 0.9, day);
-  hemi.color.set('#40507a').lerp(tmpC.set('#bcd2f2'), day);
-  hemi.groundColor.set('#1a1410').lerp(tmpC.set('#8a6440'), day);
-  renderer.toneMappingExposure = lerp(0.62, 0.5, day) * (G.state === 'title' ? 1.05 : 1);
+  hemi.intensity = lerp(0.75, 1.45, day) * BR;
+  hemi.color.set('#6a7cb0').lerp(tmpC.set('#c4d8f4'), day);
+  hemi.groundColor.set('#3a3040').lerp(tmpC.set('#9a7450'), day);
+  ambient.intensity = lerp(0.35, 0.3, day) * BR;
+  ambient.color.set('#9aa8d8').lerp(tmpC.set('#fff1e0'), day);
+  // a luz de preenchimento vem de trás da câmera, levemente de cima
+  fill.intensity = lerp(0.5, 0.75, day) * BR;
+  fill.color.set('#aab8e8').lerp(tmpC.set('#ffe8d0'), day);
+  fill.position.copy(camera.position).add(TMP_FILL.set(0, 3, 0));
+  fill.target.position.set(P.x, (P.y || 0) + 1, P.z);
+  renderer.toneMappingExposure = lerp(0.78, 0.6, day) * Math.sqrt(BR) * (G.state === 'title' ? 1.05 : 1);
 
   tmpC.copy(fogNight).lerp(fogDay, day).lerp(fogGold, golden * 0.75);
   scene.fog.color.copy(tmpC);
@@ -732,7 +751,7 @@ function updateLampLights(dt) {
     lampLights.forEach((l, i) => { const s = sorted[i]; if (s) l.position.set(s.x, s.y - 0.1, s.z); });
   }
   const flick = 1 + Math.sin(performance.now() / 70) * 0.04;
-  lampLights.forEach((l) => { l.intensity = 22 * lit * flick; });
+  lampLights.forEach((l) => { l.intensity = 30 * lit * flick; });
 }
 
 // ---------------------------------------------------------------------
@@ -912,7 +931,7 @@ function poseHorse(h, phase, speed) {
 // Estado do jogo
 // ---------------------------------------------------------------------
 const G = {
-  state: 'title', time: 17.2, day: 1, money: 12.5, ammo: 6, reserve: 36, reloading: 0,
+  state: 'title', time: 14.5, day: 1, money: 12.5, ammo: 6, reserve: 36, reloading: 0,
   drunk: 0, menu: null, fading: false, muted: false, hatColor: '#2c2219', coatColor: '#4a3b2c', beard: true,
   bottleHits: 0, gotLetter: false, shake: 0, health: 100, lastHit: 99, wanted: 0, bounty: null, lock: null, valuables: {},
 };
@@ -2091,7 +2110,7 @@ let saveT = 0;
 function frame() {
   const dt = Math.min(0.05, clock.getDelta());
   if (G.state === 'play') {
-    if (!G.menu) advanceTime(dt / 40); // 1 hora de jogo = 40 s
+    if (!G.menu) advanceTime(dt / 40 * (nightK > 0.5 ? 2.5 : 1)); // 1 hora de jogo = 40 s (a noite passa mais rápido)
     const inter = (!G.menu && !G.fading) ? getInteraction() : null;
     const list = [];
     if (inter) { if (inter.e) list.push({ key: 'E', label: inter.e.label }); if (inter.f) list.push({ key: 'F', label: inter.f.label }); }
@@ -2106,6 +2125,7 @@ function frame() {
       if (pressed.Shoot) shoot();
     }
     if (pressed.KeyM) toggleMute();
+    if (pressed.KeyB) cycleBright();
     const aiming = updatePlayer(dt);
     updateHorse(dt);
     updateNPCs(dt);
@@ -2161,6 +2181,17 @@ window.addEventListener('pagehide', saveGame);
 // ---------------------------------------------------------------------
 // Título e início
 // ---------------------------------------------------------------------
+function setBright(name) {
+  brightName = name; store.set('pv3d-bright', name);
+  document.querySelectorAll('.bright button').forEach((b) => b.classList.toggle('on', b.dataset.b === name));
+}
+document.querySelectorAll('.bright button').forEach((b) => b.addEventListener('click', () => setBright(b.dataset.b)));
+setBright(brightName);
+function cycleBright() {
+  const order = ['normal', 'claro', 'max'];
+  setBright(order[(order.indexOf(brightName) + 1) % order.length]);
+  toast('Brilho: ' + BRIGHT_NAMES[brightName], brightName === 'max' ? 'Mais claro possível.' : '');
+}
 function markQuality() { document.querySelectorAll('.quality button').forEach((b) => b.classList.toggle('on', b.dataset.q === qName)); }
 document.querySelectorAll('.quality button').forEach((b) => b.addEventListener('click', () => {
   qName = b.dataset.q; store.set('pv3d-quality', qName); markQuality(); applyQuality(qName);

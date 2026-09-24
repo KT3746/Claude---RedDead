@@ -44,6 +44,7 @@
       <div class="menu-foot">[↑/↓] Escolher · [Enter/E] Confirmar · [Esc] Sair</div>
     </div>
     <button id="muteBtn" class="round" data-key="KeyM" aria-label="Som">🔊</button>
+    <button id="brightBtn" class="round" data-key="KeyB" aria-label="Brilho">☀</button>
     <div id="touchUI">
       <div id="joy"><div id="joyKnob"></div></div>
       <button class="tb fire" data-key="Shoot" aria-label="Atirar">🔫</button>
@@ -72,6 +73,7 @@
         <div><b>Clique</b> Atirar</div>
         <div><b>R</b> Recarregar</div>
         <div><b>M</b> Som</div>
+        <div><b>B</b> Brilho</div>
         <div><b>Esc</b> Soltar o mouse</div>
       </div>
       <div class="quality" role="group" aria-label="Qualidade gráfica">
@@ -79,6 +81,12 @@
         <button data-q="baixa">Leve</button>
         <button data-q="media">Médio</button>
         <button data-q="alta">Alto</button>
+      </div>
+      <div class="quality bright" role="group" aria-label="Brilho">
+        <span>Brilho</span>
+        <button data-b="normal">Normal</button>
+        <button data-b="claro">Claro</button>
+        <button data-b="max">Máximo</button>
       </div>
       <button id="startBtn" disabled>Carregando o velho oeste…</button>
       <p id="loadMsg" class="small"></p>
