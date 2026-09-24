@@ -276,3 +276,6 @@ body.ui-open.touch #toasts { display: none; }
 }
 body.touch #muteBtn { top: 124px; right: calc(70px + env(safe-area-inset-right)); width: 38px; height: 38px; }
 @media (orientation: landscape) and (max-height: 500px) { body.touch #muteBtn { top: 110px; } }
+.other-version { margin-top: 14px; font-size: 16px; }
+.other-version[hidden] { display: none; }
+.other-version a { color: var(--gold); }

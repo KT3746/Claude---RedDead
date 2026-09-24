@@ -82,6 +82,7 @@
       </div>
       <button id="startBtn" disabled>Carregando o velho oeste…</button>
       <p id="loadMsg" class="small"></p>
+      <p class="small other-version" hidden><a href="../">← Jogar a versão 2D</a></p>
     </div>
   </div>
 
@@ -95,6 +96,9 @@
         if (m && !m.textContent) m.textContent = 'Ainda carregando… Se não abrir, verifique a internet ou tente outro navegador (Chrome ou Safari atualizados).';
       }
     }, 12000);
+  </script>
+  <script>
+    if (/github\.io$/.test(location.hostname)) document.querySelectorAll('.other-version').forEach(function (e) { e.hidden = false; });
   </script>
   <script type="module" src="main.js"></script>
 </body>

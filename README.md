@@ -1,5 +1,9 @@
 # Poeira Vermelha
 
+**Jogar online (sem instalar nada, funciona no Safari do iPhone):**
+- Versão 2D: https://kt3746.github.io/Claude---RedDead/
+- Versão 3D: https://kt3746.github.io/Claude---RedDead/3d/
+
 Um pequeno jogo de faroeste em 2D (visão de cima), inspirado em *Red Dead Redemption 2*.
 Você é um forasteiro na cidade de **Vale Esperança** (1899). Anda pela cidade, conversa com moradores,
 bebe no saloon, cuida do seu cavalo e caça recompensas.

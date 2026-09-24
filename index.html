@@ -80,11 +80,16 @@
       <button id="startBtn">Pressione ENTER para começar</button>
       <button id="newGameBtn" hidden>Novo jogo</button>
       <p class="rotate-hint">Dica: no celular, jogue com a tela na horizontal.</p>
+      <p class="other-version" hidden><a href="3d/">Jogar a versão 3D →</a></p>
     </div>
   </div>
 
   <div id="fade"><div id="fadeText"></div></div>
 
+  <script>
+    // Os links entre versões só funcionam no site público (GitHub Pages)
+    if (/github\.io$/.test(location.hostname)) document.querySelectorAll('.other-version').forEach(function (e) { e.hidden = false; });
+  </script>
   <script src="game.js"></script>
 </body>
 </html>
