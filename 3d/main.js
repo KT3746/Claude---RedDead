@@ -243,6 +243,7 @@ sandTex.repeat.set(160, 160);
   const mesh = new THREE.Mesh(g, groundMat);
   mesh.receiveShadow = true;
   scene.add(mesh);
+  window.__groundMesh = mesh;
 })();
 
 // Estrada de terra (faixa que acompanha o terreno)
@@ -763,6 +764,7 @@ function createHuman(o) {
   for (const s of [-1, 1]) mk(geo('eye', () => new THREE.SphereGeometry(0.014, 6, 4)), M('#1a0f08'), head, s * 0.042, 0.02, 0.1);
   const beard = mk(geo('beard', () => new THREE.SphereGeometry(0.1, 10, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55)), M('#4a2e1a'), head, 0, -0.01, 0.02);
   beard.visible = !!o.beard;
+  if (o.bandana) { const band = mk(geo('bandana', () => new THREE.SphereGeometry(0.118, 12, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.32)), M(o.bandana), head, 0, 0.0, 0.01); band.scale.set(1.02, 1.1, 1.06); }
   if (o.female && !o.hat) mk(geo('hair', () => new THREE.SphereGeometry(0.125, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6)), M(o.hair || '#4a2e1a'), head, 0, 0.02, -0.01);
   const hatG = new THREE.Group(); hatG.position.y = 0.08; head.add(hatG);
   const hatMeshes = [];
@@ -906,7 +908,7 @@ function poseHorse(h, phase, speed) {
 const G = {
   state: 'title', time: 17.2, day: 1, money: 12.5, ammo: 6, reserve: 36, reloading: 0,
   drunk: 0, menu: null, fading: false, muted: false, hatColor: '#2c2219', coatColor: '#4a3b2c', beard: true,
-  bottleHits: 0, gotLetter: false, shake: 0,
+  bottleHits: 0, gotLetter: false, shake: 0, health: 100, lastHit: 99, wanted: 0, bounty: null, lock: null,
 };
 
 const player = {
@@ -978,7 +980,7 @@ for (let i = 0; i < Q.npcs; i++) {
   const p = streetPoint();
   const n = {
     x: p.x, z: p.z, heading: R(0, 6), phase: R(0, 6), move: 0, tx: p.x, tz: p.z, wait: R(0, 4), stuck: 0,
-    name: NAMES[i % NAMES.length], talkCd: 0, speed: R(1.1, 1.5),
+    name: NAMES[i % NAMES.length], talkCd: 0, alive: true, fall: 0, deadT: 0, speed: R(1.1, 1.5),
     h: createHuman({ female, skin: pick(SKINS), shirt: pick(['#d8ceb5', '#bfb39a', '#e6ddc8']), coat: female ? pick(DRESSES) : pick(COATS), pants: pick(['#3b3a3a', '#4b3a2a', '#5a5040']), hat: female ? (Math.random() < 0.5 ? pick(['#6b4a5a', '#3b3b5a', '#e8dcc0']) : null) : pick(HATS), beard: !female && Math.random() < 0.5 }),
   };
   scene.add(n.h.root); n.h.root.userData.dynamic = true;
@@ -1043,6 +1045,12 @@ function sfx(kind, vol = 1) {
     const g = AC.createGain(); g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
     src.connect(f).connect(g).connect(MASTER); src.start(t);
     tone(2400, 0.2, 'triangle', 0.08, 0.02); tone(3100, 0.15, 'triangle', 0.06, 0.05);
+  } else if (kind === 'eshot') {
+    const src = AC.createBufferSource(); src.buffer = noiseBuf(0.5);
+    const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(1500, t); f.frequency.exponentialRampToValueAtTime(150, t + 0.4);
+    const g = AC.createGain(); g.gain.setValueAtTime(0.6 * vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    src.connect(f).connect(g).connect(MASTER); src.start(t);
+  } else if (kind === 'hurt') { tone(160, 0.25, 'sawtooth', 0.12, 0, 70);
   } else if (kind === 'coin') { tone(1318, 0.09, 'square', 0.05); tone(1760, 0.25, 'square', 0.05, 0.08); }
   else if (kind === 'whistle') { tone(1500, 0.18, 'sine', 0.15, 0, 2300); tone(1700, 0.35, 'sine', 0.15, 0.22, 2600); }
   else if (kind === 'neigh') { tone(700, 0.6, 'sawtooth', 0.04 * vol, 0, 400); tone(900, 0.4, 'sawtooth', 0.025 * vol, 0.1, 500); }
@@ -1090,9 +1098,17 @@ function updateHUD() {
   const h = Math.floor(G.time) % 24, m = Math.floor((G.time % 1) * 60);
   const clock = `Dia ${G.day} · ${String(h).padStart(2, '0')}:${String(m - (m % 5)).padStart(2, '0')}`;
   const ammo = G.reloading > 0 ? 'Recarregando…' : `${G.ammo} / ${G.reserve}`;
-  const key = clock + G.money.toFixed(2) + ammo;
+  const hp = Math.round(G.health);
+  let obj = '';
+  if (G.wanted > 0) obj = `<b>PROCURADO</b>Recompensa de ${fmtMoney(G.wanted)} pela sua cabeça. Pague no Xerife.`;
+  else if (G.bounty && G.bounty.stage === 'hunt') obj = `<b>CAÇADA</b>Elimine ${G.bounty.name} (vermelho no minimapa).`;
+  else if (G.bounty) obj = `<b>CAÇADA</b>Volte ao Xerife para receber ${fmtMoney(G.bounty.reward)}.`;
+  const key = clock + G.money.toFixed(2) + ammo + hp + obj;
   if (key === lastHud) return;
   lastHud = key;
+  $('hpFill').style.width = hp + '%';
+  $('health').classList.toggle('low', hp < 35);
+  $('objective').innerHTML = obj;
   $('clock').textContent = clock; $('money').textContent = fmtMoney(G.money);
   $('ammo').textContent = '🔫 ' + ammo; $('ammo').classList.toggle('low', G.ammo === 0);
 }
@@ -1183,11 +1199,16 @@ function buildingMenu(b) {
       ]);
       break;
     case 'sheriff':
-      openMenu('Gabinete do Xerife', 'Cartazes de procurados cobrem a parede.', [
-        { label: 'Conversar com o xerife', fn: () => { toast('Xerife Malloy', pick(['"Garrafas lá atrás, se quiser treinar a mira."', '"Mantenha o revólver no coldre dentro da cidade."', '"Os O\'Driscoll andam rondando as colinas."', '"Vale Esperança é tranquila. Quero que continue assim."'])); return false; } },
-        { label: 'Ver cartazes', desc: 'Caçadas de recompensa chegam na próxima atualização.', fn: () => { toast('Procurado', '"Dutch Callahan — $50, vivo ou morto." Ainda não há como caçá-lo.'); return false; } },
-        close,
-      ]);
+      {
+        const opts = [];
+        if (G.wanted > 0) opts.push({ label: 'Pagar a multa', desc: 'Limpe seu nome com a lei.', price: G.wanted, fn: () => { G.wanted = 0; toast('Nome limpo', 'Você não é mais procurado.', 'good'); return false; } });
+        if (G.bounty && G.bounty.stage === 'return') opts.push({ label: `Entregar ${G.bounty.name}`, desc: 'Receber a recompensa.', fn: () => { const r = G.bounty.reward; earn(r); banner('RECOMPENSA RECEBIDA', `+${fmtMoney(r)}`); G.bounty = null; clearCamp(); return false; } });
+        if (!G.bounty) opts.push({ label: 'Aceitar caçada de recompensa', desc: 'Bandidos armados num esconderijo fora da cidade. Eles atiram de volta!', fn: () => { startBounty(); return false; } });
+        else if (G.bounty.stage === 'hunt') opts.push({ label: 'Desistir da caçada', fn: () => { G.bounty = null; clearCamp(); toast('Caçada cancelada', 'O xerife balança a cabeça.'); return false; } });
+        opts.push({ label: 'Conversar com o xerife', fn: () => { toast('Xerife Malloy', pick(['"Garrafas lá atrás, se quiser treinar a mira."', '"Mire no peito. Na cabeça, se tiver coragem."', '"Ande a cavalo e em zigue-zague: fica difícil te acertar."', '"Atirou num inocente? Vai pagar por isso."'])); return false; } });
+        opts.push(close);
+        openMenu('Gabinete do Xerife', G.wanted > 0 ? 'O xerife te olha de cara feia.' : 'Cartazes de procurados cobrem a parede.', opts);
+      }
       break;
     case 'stable':
       openMenu('Estábulo', `${horse.name} está com você há anos.`, [
@@ -1362,7 +1383,8 @@ function getInteraction() {
   const labels = { saloon: 'Entrar no Saloon', hotel: 'Entrar no Hotel', store: 'Entrar no Armazém', bank: 'Entrar no Banco', barber: 'Entrar na Barbearia', church: 'Entrar na Igreja', sheriff: 'Falar com o Xerife', stable: 'Estábulo', post: 'Entrar no Correio', house: 'Bater na porta' };
   for (const b of BUILDINGS) consider(Math.hypot(player.x - b.doorX, player.z - b.doorZ), 2.2, { e: { label: labels[b.id], fn: () => buildingMenu(b) } });
   consider(Math.hypot(player.x - horse.x, player.z - horse.z) - 0.4, 2.6, { e: { label: `Montar ${horse.name}`, fn: mount }, f: { label: 'Acariciar', fn: petHorse } });
-  for (const n of npcs) consider(Math.hypot(player.x - n.x, player.z - n.z), 2.2, { e: { label: `Cumprimentar ${n.name}`, fn: () => greet(n) } });
+  for (const n of npcs) if (n.alive !== false) consider(Math.hypot(player.x - n.x, player.z - n.z), 2.2, { e: { label: `Cumprimentar ${n.name}`, fn: () => greet(n) } });
+  for (const b of bandits) if (!b.alive && !b.looted) consider(Math.hypot(player.x - b.x, player.z - b.z), 2.4, { e: { label: 'Revistar o corpo', fn: () => { b.looted = true; const c = Math.round(R(2, 8) * 100) / 100, a = 3 + Math.floor(Math.random() * 6); earn(c); G.reserve += a; toast('Revistado', `${fmtMoney(c)} e ${a} balas.`, 'gold'); } } });
   for (const it of interactables) consider(Math.hypot(player.x - it.x, player.z - it.z) + 0.3, it.r, { e: { label: it.label, fn: it.fn } });
   return best;
 }
@@ -1427,61 +1449,329 @@ function breakBottle(b) {
   }
   if (bottles.every((q) => !q.alive)) { earn(2); banner('PONTARIA PERFEITA', 'Todas as garrafas! +$2.00'); }
 }
-function autoTargetBottle() {
-  let best = null, bd = 1e9;
-  const fx = -Math.sin(look.yaw), fz = -Math.cos(look.yaw);
-  for (const b of bottles) {
-    if (!b.alive) continue;
-    const dx = b.mesh.position.x - player.x, dz = b.mesh.position.z - player.z, d = Math.hypot(dx, dz);
-    if (d > 30) continue;
-    const facing = (dx * fx + dz * fz) / (d || 1);
-    const score = d - facing * 8;
-    if (score < bd) { bd = score; best = b; }
+// ---------------------------------------------------------------------
+// Combate: mira, balas, efeitos, bandidos e consequências
+// ---------------------------------------------------------------------
+const TMP = new THREE.Vector3(), TMP2 = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
+
+// Rastro de bala (traçante)
+const tracers = [];
+for (let i = 0; i < 10; i++) {
+  const m = new THREE.Mesh(geo('tracer', () => new THREE.CylinderGeometry(0.012, 0.012, 1, 4, 1, true)),
+    new THREE.MeshBasicMaterial({ color: 0xffe6a0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+  m.visible = false; m.userData.dynamic = true; scene.add(m);
+  tracers.push({ m, t: 0 });
+}
+let tracerI = 0;
+function spawnTracer(from, to, color) {
+  const tr = tracers[tracerI++ % tracers.length];
+  const len = from.distanceTo(to);
+  if (len < 0.2) return;
+  tr.m.position.copy(from).lerp(to, 0.5);
+  tr.m.quaternion.setFromUnitVectors(UP, TMP.copy(to).sub(from).normalize());
+  tr.m.scale.set(1, len, 1);
+  tr.m.material.color.set(color || 0xffe6a0);
+  tr.m.material.opacity = 0.9; tr.m.visible = true; tr.t = 0.09;
+}
+// Nuvens de poeira / sangue no ponto de impacto
+const puffs = [];
+for (let i = 0; i < 24; i++) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0xc8a878, transparent: true, opacity: 0, depthWrite: false }));
+  s.visible = false; s.userData.dynamic = true; scene.add(s);
+  puffs.push({ s, t: 0, max: 0.5, grow: 1 });
+}
+let puffI = 0;
+function spawnPuff(pos, color, size = 0.5, life = 0.5) {
+  for (let k = 0; k < 3; k++) {
+    const p = puffs[puffI++ % puffs.length];
+    p.s.position.copy(pos).add(TMP.set(R(-0.08, 0.08), R(0, 0.12), R(-0.08, 0.08)));
+    p.s.material.color.set(color); p.s.material.opacity = 0.85;
+    p.s.scale.setScalar(size * 0.3); p.grow = size; p.t = life * R(0.8, 1.2); p.max = p.t; p.s.visible = true;
+  }
+}
+function updateEffects(dt) {
+  for (const tr of tracers) if (tr.t > 0) { tr.t -= dt; tr.m.material.opacity = Math.max(0, tr.t / 0.09) * 0.9; if (tr.t <= 0) tr.m.visible = false; }
+  for (const p of puffs) {
+    if (p.t <= 0) continue;
+    p.t -= dt;
+    const k = 1 - p.t / p.max;
+    p.s.scale.setScalar(p.grow * (0.3 + k * 0.9));
+    p.s.material.opacity = (1 - k) * 0.85;
+    p.s.position.y += dt * 0.3;
+    if (p.t <= 0) p.s.visible = false;
+  }
+}
+let hitmarkT = null;
+function showHitmark(kill, sx, sy) {
+  const el = $('hitmark');
+  el.className = kill ? 'kill show' : 'show';
+  el.style.left = (sx !== undefined ? sx : window.innerWidth / 2) + 'px';
+  el.style.top = (sy !== undefined ? sy : window.innerHeight / 2) + 'px';
+  clearTimeout(hitmarkT); hitmarkT = setTimeout(() => { el.className = ''; }, 180);
+}
+
+// Bandidos
+const bandits = [];
+const campMeshes = [];
+const BOUNTY_SPOTS = [{ x: 175, z: -80 }, { x: -190, z: 85 }, { x: 75, z: 165 }, { x: -70, z: -175 }];
+const OUTLAW_NAMES = ['"Dentuço" McGraw', 'Josiah "Cascavel" Trent', 'Big Jim Colby', 'Dutch Callahan', 'Mickey "Olho Torto" Reyes'];
+const BANDIT_LINES = ['Um caçador de recompensas!', 'Peguem ele, rapazes!', 'Você não vai me levar vivo!', 'Fogo nele!'];
+function makeBandit(x, z, leader) {
+  const h = createHuman({ skin: pick(SKINS), shirt: '#7a6a5a', coat: leader ? '#2a2420' : pick(['#3a2a22', '#2d2a28', '#4a2f2a']), pants: '#2a2622', hat: leader ? '#1b1b1b' : pick(['#3a2a1a', '#2c2219']), bandana: '#8a1a1a', beard: true });
+  h.root.userData.dynamic = true; scene.add(h.root);
+  return { kind: 'bandit', x, z, y: height(x, z), heading: R(0, 6), phase: 0, move: 0, h, hp: leader ? 4 : 2, alive: true, alert: false, leader, shootT: R(1.2, 2.2), tx: 0, tz: 0, stuck: 0, fall: 0, looted: false, aimT: 0 };
+}
+function addCampMesh(m) { m.userData.dynamic = true; scene.add(m); campMeshes.push(m); return m; }
+function startBounty() {
+  let spot = pick(BOUNTY_SPOTS), sx = spot.x, sz = spot.z;
+  for (let k = 0; k < 30 && isBlocked(sx, sz, 3); k++) { sx = spot.x + R(-12, 12); sz = spot.z + R(-12, 12); }
+  const name = pick(OUTLAW_NAMES);
+  const count = 2 + (Math.random() < 0.5 ? 1 : 0);
+  G.bounty = { name, x: sx, z: sz, stage: 'hunt', reward: 20 + count * 10 };
+  // acampamento: fogueira e barraca
+  const y = height(sx, sz);
+  for (let i = 0; i < 6; i++) { const log = addCampMesh(new THREE.Mesh(geo('log', () => new THREE.CylinderGeometry(0.07, 0.07, 0.8, 6)), M('#3a2414'))); log.position.set(sx + Math.cos(i) * 0.2, y + 0.1, sz + Math.sin(i) * 0.2); log.rotation.set(Math.PI / 2, i, 0); }
+  const flame = addCampMesh(new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.8, 7), new THREE.MeshBasicMaterial({ color: 0xff8a2a })));
+  flame.position.set(sx, y + 0.45, sz); flame.userData.flame = true;
+  const glow = addCampMesh(new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xff9a4a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending })));
+  glow.position.set(sx, y + 0.6, sz); glow.scale.set(4, 4, 1);
+  const tent = addCampMesh(new THREE.Mesh(new THREE.ConeGeometry(1.6, 2.2, 4), M('#cdbf9a')));
+  tent.position.set(sx + 4, y + 1.1, sz - 2); tent.rotation.y = 0.5; tent.castShadow = true;
+  bandits.length = 0;
+  for (let i = 0; i < count; i++) {
+    let bx = sx + Math.cos(i * 2.1) * 3, bz = sz + Math.sin(i * 2.1) * 3;
+    for (let k = 0; k < 20 && isBlocked(bx, bz, 0.4); k++) { bx += R(-1, 1); bz += R(-1, 1); }
+    const b = makeBandit(bx, bz, i === 0);
+    b.heading = Math.atan2(sx - bx, sz - bz);
+    bandits.push(b);
+  }
+  banner('PROCURADO: ' + name.toUpperCase(), `Vivo ou morto · ${fmtMoney(G.bounty.reward)}`);
+  toast('Caçada aceita', 'O esconderijo está marcado em vermelho no minimapa. Chame seu cavalo (H).', 'gold');
+}
+function clearCamp() {
+  for (const m of campMeshes) scene.remove(m);
+  campMeshes.length = 0;
+  for (const b of bandits) scene.remove(b.h.root);
+  bandits.length = 0;
+}
+function hasLOS(fx, fy, fz, tx, ty, tz) {
+  TMP.set(fx, fy, fz); TMP2.set(tx - fx, ty - fy, tz - fz);
+  const d = TMP2.length(); TMP2.normalize();
+  raycaster.set(TMP, TMP2); raycaster.far = d;
+  return raycaster.intersectObjects(blockers, false).length === 0;
+}
+function updateBandits(dt) {
+  const A = anchor();
+  for (const b of bandits) {
+    if (!b.alive) {
+      b.fall = Math.min(1, b.fall + dt * 3);
+      b.h.root.rotation.x = -b.fall * Math.PI / 2;
+      b.h.root.position.y = b.y + b.fall * 0.12;
+      continue;
+    }
+    const d = Math.hypot(A.x - b.x, A.z - b.z);
+    b.aimT = Math.max(0, b.aimT - dt);
+    if (!b.alert && d < 40) {
+      for (const q of bandits) q.alert = true;
+      if (b.leader || bandits.every((q) => !q.leader || !q.alive)) say(b, pick(BANDIT_LINES), 2.5);
+    }
+    if (b.alert && d < 90) {
+      if (!b.tx || Math.hypot(b.tx - b.x, b.tz - b.z) < 0.8 || b.stuck > 1.2) {
+        const a = Math.atan2(b.x - A.x, b.z - A.z) + R(-0.9, 0.9);
+        const want = clamp(d, 12, 22);
+        b.tx = A.x + Math.sin(a) * want; b.tz = A.z + Math.cos(a) * want; b.stuck = 0;
+      }
+      const dx = b.tx - b.x, dz = b.tz - b.z, dd = Math.hypot(dx, dz) || 1;
+      const moved = moveCircle(b, (dx / dd) * 3.2 * dt, (dz / dd) * 3.2 * dt, 0.3);
+      b.stuck = moved ? 0 : b.stuck + dt;
+      b.move = lerp(b.move, 1.4, clamp(dt * 5, 0, 1));
+      b.phase += dt * 9;
+      // encara o jogador enquanto atira
+      b.heading += angDiff(b.heading, Math.atan2(A.x - b.x, A.z - b.z)) * clamp(dt * 8, 0, 1);
+      b.shootT -= dt;
+      if (b.shootT <= 0 && d < 45 && G.state === 'play' && !G.fading) {
+        b.shootT = R(1.3, 2.5);
+        const tyA = (A.y || 0) + (player.mounted ? 2.2 : 1.3);
+        if (hasLOS(b.x, b.y + 1.5, b.z, A.x, tyA, A.z)) banditShoot(b, d);
+      }
+    } else b.move = lerp(b.move, 0, clamp(dt * 5, 0, 1));
+    b.y = height(b.x, b.z);
+    b.h.root.position.set(b.x, b.y, b.z);
+    b.h.root.rotation.y = b.heading;
+    poseHuman(b.h, { phase: b.phase, move: b.move, aim: b.alert && b.aimT > 0 || (b.alert && d < 45), pitch: 0 });
+  }
+  const flame = campMeshes.find((m) => m.userData.flame);
+  if (flame) { const s = 1 + Math.sin(performance.now() / 90) * 0.12; flame.scale.set(s, 1 + Math.sin(performance.now() / 70) * 0.18, s); }
+}
+function banditShoot(b, d) {
+  b.aimT = 0.6;
+  const hand = new THREE.Vector3(); b.h.armR.hand.getWorldPosition(hand);
+  const A = anchor();
+  const moving = player.mounted ? horse.speed > 6 : player.move > 1.2;
+  let chance = clamp(0.72 - d * 0.014 - (moving ? 0.22 : 0), 0.12, 0.65);
+  const target = new THREE.Vector3(A.x, (A.y || 0) + (player.mounted ? 2.2 : 1.3), A.z);
+  const hit = Math.random() < chance;
+  if (!hit) target.add(TMP.set(R(-1.3, 1.3), R(-0.4, 0.9), R(-1.3, 1.3)));
+  spawnTracer(hand, target, 0xffc080);
+  const vol = clamp(1 - d / 70, 0.25, 1);
+  sfx('eshot', vol);
+  if (hit) hurtPlayer(14);
+  else spawnPuff(new THREE.Vector3(target.x, height(target.x, target.z) + 0.05, target.z), 0xc8a878, 0.4, 0.4);
+}
+function hurtPlayer(dmg) {
+  G.health -= dmg; G.lastHit = 0; G.shake = 0.2; sfx('hurt');
+  const el = $('hurt'); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+  if (G.health <= 0) die();
+}
+function die() {
+  if (G.fading) return;
+  G.health = 0;
+  fade('VOCÊ MORREU', () => {
+    const lost = Math.round(G.money * 0.2 * 100) / 100;
+    G.money -= lost; G.health = 100;
+    if (player.mounted) { player.mounted = false; horse.state = 'idle'; scene.add(player.h.root); }
+    const hotel = BUILDINGS.find((b) => b.id === 'hotel');
+    player.x = hotel.doorX; player.z = hotel.doorZ + 2.5;
+    look.yaw = player.heading + Math.PI;
+    for (const b of bandits) if (b.alive) { b.alert = false; b.hp = b.leader ? 4 : 2; }
+    advanceTime(4);
+    toast('Você sobreviveu… por pouco', lost > 0 ? `O médico cobrou ${fmtMoney(lost)}.` : 'Você acordou na frente do hotel.');
+  });
+}
+function banditDown(b) {
+  b.alive = false; b.fall = 0;
+  if (b.leader && G.bounty) {
+    G.bounty.stage = 'return';
+    say(player, 'Fim da linha.', 2);
+    toast('Alvo eliminado', `${G.bounty.name} está morto. Volte ao Xerife para receber.`, 'gold');
+  }
+}
+function killNPC(n) {
+  n.alive = false; n.fall = 0; n.deadT = 0;
+  G.wanted += 15;
+  toast('Crime testemunhado', `Você matou ${n.name}. Há uma recompensa de ${fmtMoney(G.wanted)} pela sua cabeça — pague no Xerife.`);
+  for (const q of npcs) if (q.alive && Math.hypot(q.x - n.x, q.z - n.z) < 40) { q.flee = 10; if (Math.random() < 0.4) say(q, pick(['Assassino!', 'Socorro! Xerife!', 'Corram!']), 2); }
+}
+
+// Mira: acha o alvo mais perto do centro da tela (celular) — nunca moradores
+function targetPoint(t) {
+  if (t.kind === 'bottle') return TMP2.copy(t.mesh.position).add(TMP.set(0, 0.15, 0)).clone();
+  return new THREE.Vector3(t.x, t.y + 1.25, t.z);
+}
+const camFwd = new THREE.Vector3();
+let lockT = 0;
+function updateLock(dt) {
+  lockT -= dt;
+  if (lockT > 0) return;
+  lockT = 0.1;
+  G.lock = null;
+  if (!IS_TOUCH || G.state !== 'play' || G.menu) return;
+  camera.getWorldDirection(camFwd);
+  const cands = [];
+  for (const b of bandits) if (b.alive) cands.push({ t: b, hostile: true, max: 55 });
+  for (const b of bottles) if (b.alive) { b.kind = 'bottle'; cands.push({ t: b, hostile: false, max: 32 }); }
+  const scored = [];
+  for (const c of cands) {
+    const p = targetPoint(c.t);
+    TMP.copy(p).sub(camera.position);
+    const d = TMP.length();
+    if (d > c.max + 5) continue;
+    const ang = Math.acos(clamp(TMP.normalize().dot(camFwd), -1, 1));
+    if (ang > 0.55) continue;
+    scored.push({ c, p, score: ang + d * 0.004 - (c.hostile ? 0.35 : 0) });
+  }
+  scored.sort((a, b) => a.score - b.score);
+  for (const s of scored.slice(0, 4)) {
+    if (hasLOS(camera.position.x, camera.position.y, camera.position.z, s.p.x, s.p.y, s.p.z)) { G.lock = s.c.t; G.lockHostile = s.c.hostile; break; }
+  }
+}
+function drawLock() {
+  const el = $('lock');
+  if (!G.lock) { el.className = ''; return; }
+  const p = targetPoint(G.lock).project(camera);
+  if (p.z > 1) { el.className = ''; return; }
+  el.className = 'show' + (G.lockHostile ? ' hostile' : '');
+  el.style.left = ((p.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+  el.style.top = ((-p.y * 0.5 + 0.5) * window.innerHeight) + 'px';
+}
+
+// Teste de acerto em pessoas: corpo como uma "coluna" de esferas
+function rayHitHuman(ray, e, maxD) {
+  let best = null;
+  for (let h = 0.3; h <= 1.8; h += 0.15) {
+    TMP.set(e.x, e.y + h, e.z);
+    const along = TMP.clone().sub(ray.origin).dot(ray.direction);
+    if (along < 0.5 || along > maxD) continue;
+    const r = h > 1.55 ? 0.17 : 0.3;
+    if (ray.distanceSqToPoint(TMP) < r * r && (!best || along < best.along)) best = { along, head: h > 1.55 };
   }
   return best;
 }
+const groundRef = window.__groundMesh;
+groundRef.userData.dynamic = true; // fica fora do agrupamento (usado nos impactos)
 function shoot() {
   if (G.reloading > 0 || player.aimT > 0.62) return;
   if (G.ammo <= 0) { sfx('click'); startReload(); return; }
   G.ammo--;
   player.aimT = 0.9; G.shake = 0.12;
   sfx('shot');
-  // fogo do cano
   const hand = new THREE.Vector3(); player.h.armR.hand.getWorldPosition(hand);
   muzzle.position.copy(hand); muzzle.intensity = 40;
-  // disparo: a partir do centro da tela (ou mira automática no celular)
-  const target = IS_TOUCH ? autoTargetBottle() : null;
-  if (target) {
-    const p = target.mesh.position;
-    look.yaw = Math.atan2(player.x - p.x, player.z - p.z);
-    player.heading = look.yaw + Math.PI;
-    if (Math.random() < 0.85) {
-      const from = camera.position.clone(), dir = p.clone().add(new THREE.Vector3(0, 0.15, 0)).sub(from).normalize();
-      raycaster.set(from, dir);
-    } else raycaster.setFromCamera(new THREE.Vector2(R(-0.02, 0.02), R(-0.02, 0.02)), camera);
+  spawnPuff(hand, 0xfff0c0, 0.25, 0.12);
+  G.shotsFired = (G.shotsFired || 0) + 1;
+
+  const from = camera.position.clone();
+  let dir;
+  const lock = IS_TOUCH ? G.lock : null;
+  if (lock) {
+    const tp = targetPoint(lock);
+    player.heading = Math.atan2(tp.x - player.x, tp.z - player.z);
+    const d = tp.distanceTo(from);
+    const moving = player.mounted ? horse.speed > 6 : player.move > 1.2;
+    const chance = clamp(0.97 - d * 0.006 - (moving ? 0.12 : 0) - G.drunk / 250, 0.45, 0.97);
+    if (Math.random() > chance) tp.add(TMP.set(R(-0.9, 0.9), R(-0.5, 0.7), R(-0.9, 0.9)));
+    dir = tp.sub(from).normalize();
   } else {
-    const spread = (mouse.right ? 0.0015 : 0.006) + G.drunk / 3000;
+    const spread = (mouse.right ? 0.0015 : IS_TOUCH ? 0.01 : 0.006) + G.drunk / 3000;
     raycaster.setFromCamera(new THREE.Vector2(R(-spread, spread), R(-spread, spread)), camera);
+    dir = raycaster.ray.direction.clone();
+    if (IS_TOUCH && !G.tipShown) { G.tipShown = true; toast('Dica de mira', 'Gire a câmera até o alvo: um círculo aparece em cima de quem você vai acertar.'); }
   }
-  raycaster.far = 120;
-  const targets = bottles.filter((b) => b.alive).map((b) => b.mesh);
-  const hits = raycaster.intersectObjects(targets.concat(blockers), false);
-  let hitBottle = hits.length ? bottles.find((q) => q.mesh === hits[0].object) : null;
-  if (!hitBottle) {
-    // assistência de mira: a bala "raspa" numa garrafa que passou bem perto do tiro
-    const wallD = hits.length ? hits[0].distance : Infinity;
-    const center = new THREE.Vector3();
-    for (const b of bottles) {
-      if (!b.alive) continue;
-      center.copy(b.mesh.position); center.y += 0.15;
-      const along = center.clone().sub(raycaster.ray.origin).dot(raycaster.ray.direction);
-      if (along < 0 || along > wallD || along > 60) continue;
-      const tol = 0.12 + along * 0.004;
-      if (raycaster.ray.distanceSqToPoint(center) < tol * tol) { hitBottle = b; break; }
-    }
+  raycaster.set(from, dir); raycaster.far = 150;
+  const walls = raycaster.intersectObjects(groundRef ? blockers.concat([groundRef]) : blockers, false);
+  const wallD = walls.length ? walls[0].distance : 150;
+  let best = { d: wallD, kind: walls.length ? 'wall' : 'none', point: walls.length ? walls[0].point : from.clone().addScaledVector(dir, 150) };
+  // garrafas (com uma leve ajuda de mira)
+  for (const b of bottles) {
+    if (!b.alive) continue;
+    const c = TMP2.copy(b.mesh.position); c.y += 0.15;
+    const along = c.clone().sub(from).dot(dir);
+    if (along < 0 || along > best.d) continue;
+    const tol = 0.12 + along * 0.004;
+    if (raycaster.ray.distanceSqToPoint(c) < tol * tol) best = { d: along, kind: 'bottle', t: b, point: c.clone() };
   }
-  if (hitBottle) breakBottle(hitBottle);
-  for (const n of npcs) if (Math.hypot(n.x - player.x, n.z - player.z) < 12 && Math.random() < 0.5) { say(n, pick(['Cuidado com isso!', 'Ei! Guarde essa arma!', 'Jesus!']), 2); n.flee = 3; }
+  for (const b of bandits) if (b.alive) { const h = rayHitHuman(raycaster.ray, b, best.d); if (h) best = { d: h.along, kind: 'bandit', t: b, head: h.head }; }
+  for (const n of npcs) if (n.alive) { const h = rayHitHuman(raycaster.ray, n, best.d); if (h) best = { d: h.along, kind: 'npc', t: n, head: h.head }; }
+  if (!best.point || best.kind === 'bandit' || best.kind === 'npc') best.point = from.clone().addScaledVector(dir, best.d);
+
+  spawnTracer(hand, best.point);
+  const scr = best.point.clone().project(camera);
+  const sx = (scr.x * 0.5 + 0.5) * window.innerWidth, sy = (-scr.y * 0.5 + 0.5) * window.innerHeight;
+  if (best.kind === 'bottle') { breakBottle(best.t); showHitmark(false, sx, sy); }
+  else if (best.kind === 'bandit') {
+    const b = best.t;
+    b.hp -= best.head ? 4 : 1.5; b.alert = true; for (const q of bandits) q.alert = true;
+    spawnPuff(best.point, 0x8a1010, 0.35, 0.5);
+    if (b.hp <= 0) { banditDown(b); showHitmark(true, sx, sy); if (best.head) toast('Tiro na cabeça!', '', 'gold'); }
+    else showHitmark(false, sx, sy);
+  } else if (best.kind === 'npc') {
+    spawnPuff(best.point, 0x8a1010, 0.35, 0.5);
+    killNPC(best.t); showHitmark(true, sx, sy);
+  } else if (best.kind === 'wall') {
+    spawnPuff(best.point, walls[0].object === groundRef ? 0xc8a878 : 0x9a7a58, 0.45, 0.5);
+  }
+  if (best.kind !== 'npc') for (const n of npcs) if (n.alive && Math.hypot(n.x - player.x, n.z - player.z) < 12 && Math.random() < 0.5) { say(n, pick(['Cuidado com isso!', 'Ei! Guarde essa arma!', 'Jesus!']), 2); n.flee = 3; }
   if (G.ammo === 0 && G.reserve > 0) setTimeout(startReload, 350);
 }
 function startReload() {
@@ -1579,6 +1869,16 @@ function updateHorse(dt) {
 }
 function updateNPCs(dt) {
   for (const n of npcs) {
+    if (n.alive === false) {
+      n.fall = Math.min(1, n.fall + dt * 3); n.deadT += dt;
+      n.h.root.rotation.x = -n.fall * Math.PI / 2; n.h.root.position.y = n.y + n.fall * 0.12;
+      if (n.deadT > 45 && Math.hypot(n.x - player.x, n.z - player.z) > 60) {
+        // um novo morador chega à cidade
+        const p = streetPoint(); n.x = p.x; n.z = p.z; n.alive = true; n.h.root.rotation.x = 0; n.flee = 0; n.wait = 2;
+      }
+      continue;
+    }
+    if (G.wanted > 0 && Math.hypot(n.x - player.x, n.z - player.z) < 10) n.flee = Math.max(n.flee || 0, 2);
     n.talkCd = Math.max(0, n.talkCd - dt);
     if (n.flee > 0) n.flee -= dt;
     if (n.wait > 0) { n.wait -= dt; n.move = lerp(n.move, 0, clamp(dt * 6, 0, 1)); }
@@ -1661,7 +1961,7 @@ function updateCamera(dt, aiming) {
   }
   const A = anchor();
   const baseY = (A.y || 0) + (player.mounted ? 2.55 : 1.6);
-  const shoulder = aiming || player.aimT > 0 ? 0.55 : 0.28;
+  const shoulder = aiming || player.aimT > 0 ? 0.55 : IS_TOUCH ? 0.6 : 0.28;
   const rx = Math.cos(look.yaw), rz = -Math.sin(look.yaw);
   camTarget.set(A.x + rx * shoulder, baseY, A.z + rz * shoulder);
   const want = aiming ? 2.1 : player.mounted ? 6.8 : 4.4;
@@ -1705,6 +2005,20 @@ function drawMinimap() {
   for (const b of BUILDINGS) mctx.fillRect(wx(b.x - b.w / 2), wz(b.z - b.d / 2), b.w * k, b.d * k);
   mctx.fillStyle = '#e8d8b0';
   if (!player.mounted) { mctx.beginPath(); mctx.arc(wx(horse.x), wz(horse.z), 3, 0, 7); mctx.fill(); }
+  if (G.bounty && G.bounty.stage === 'hunt') {
+    let bx = wx(G.bounty.x), bz = wz(G.bounty.z); const d = Math.hypot(bx, bz), max = c - 10;
+    if (d > max) { bx *= max / d; bz *= max / d; }
+    mctx.strokeStyle = '#c21d1d'; mctx.lineWidth = 2; mctx.beginPath(); mctx.arc(bx, bz, 6, 0, 7); mctx.stroke();
+    mctx.fillStyle = 'rgba(194,29,29,0.35)'; mctx.fill();
+  }
+  if (G.bounty && G.bounty.stage === 'return') {
+    const sh = BUILDINGS.find((b) => b.id === 'sheriff');
+    let bx = wx(sh.doorX), bz = wz(sh.doorZ); const d = Math.hypot(bx, bz), max = c - 10;
+    if (d > max) { bx *= max / d; bz *= max / d; }
+    mctx.fillStyle = '#d9b35c'; mctx.beginPath(); mctx.arc(bx, bz, 5, 0, 7); mctx.fill();
+  }
+  mctx.fillStyle = '#e02020';
+  for (const b of bandits) if (b.alive && b.alert) { mctx.beginPath(); mctx.arc(wx(b.x), wz(b.z), 2.5, 0, 7); mctx.fill(); }
   mctx.fillStyle = '#c21d1d';
   const rb = bottles.some((b) => b.alive);
   if (rb) { mctx.beginPath(); mctx.arc(wx((RANGE_X0 + RANGE_X1) / 2), wz(RANGE_Z), 3, 0, 7); mctx.fill(); }
@@ -1749,14 +2063,20 @@ function frame() {
     const aiming = updatePlayer(dt);
     updateHorse(dt);
     updateNPCs(dt);
+    updateBandits(dt);
     updateWorld(dt);
+    updateEffects(dt);
     updateCamera(dt, aiming);
+    updateLock(dt);
+    drawLock();
+    G.lastHit += dt;
+    if (G.lastHit > 5 && G.health < 100) G.health = Math.min(100, G.health + dt * 8);
     updateBubbles(dt);
     updateHUD();
     drawMinimap();
     saveT += dt; if (saveT > 15) { saveT = 0; saveGame(); }
   } else {
-    updateHorse(dt); updateNPCs(dt); updateWorld(dt); updateCamera(dt, false);
+    updateHorse(dt); updateNPCs(dt); updateWorld(dt); updateEffects(dt); updateCamera(dt, false);
   }
   updateSky();
   updateLampLights(dt);
@@ -1778,13 +2098,13 @@ const SAVE_KEY = 'pv3d-save-v1';
 function saveGame() {
   if (G.state !== 'play') return;
   const A = anchor();
-  store.set(SAVE_KEY, JSON.stringify({ v: 1, time: G.time, day: G.day, money: G.money, ammo: G.ammo, reserve: G.reserve, hat: G.hatColor, coat: G.coatColor, beard: G.beard, muted: G.muted, gotLetter: G.gotLetter, x: A.x, z: A.z }));
+  store.set(SAVE_KEY, JSON.stringify({ v: 1, time: G.time, day: G.day, money: G.money, ammo: G.ammo, reserve: G.reserve, hat: G.hatColor, coat: G.coatColor, beard: G.beard, muted: G.muted, gotLetter: G.gotLetter, wanted: G.wanted, x: A.x, z: A.z }));
 }
 function loadGame() {
   let d = null;
   try { d = JSON.parse(store.get(SAVE_KEY)); } catch (e) { d = null; }
   if (!d || d.v !== 1) return false;
-  Object.assign(G, { time: d.time, day: d.day, money: d.money, ammo: d.ammo, reserve: d.reserve, muted: !!d.muted, gotLetter: !!d.gotLetter, beard: d.beard !== false });
+  Object.assign(G, { time: d.time, day: d.day, money: d.money, ammo: d.ammo, reserve: d.reserve, muted: !!d.muted, gotLetter: !!d.gotLetter, beard: d.beard !== false, wanted: d.wanted || 0 });
   setPlayerHat(d.hat || G.hatColor); setPlayerCoat(d.coat || G.coatColor); player.h.beard.visible = G.beard;
   if (!isBlocked(d.x, d.z, 0.4)) { player.x = d.x; player.z = d.z; }
   return true;
@@ -1874,4 +2194,4 @@ requestAnimationFrame(frame);
 buildReady();
 
 // Exposto para testes automatizados
-window.__pv3d = { G, player, horse, npcs, bottles, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality };
+window.__pv3d = { G, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer };
