@@ -41,7 +41,17 @@ canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
   background: rgba(255,255,255,0.8); box-shadow: 0 0 3px #000; transition: transform .12s;
 }
 #cross.aim { transform: scale(0.7); background: #fff; box-shadow: 0 0 0 7px rgba(255,255,255,0.25), 0 0 3px #000; }
-body.touch #cross { display: none; }
+/* no celular: mira em anel, sempre visível no centro (para onde a bala vai) */
+body.touch #cross {
+  width: 26px; height: 26px; margin: -13px 0 0 -13px; background: transparent;
+  border: 2px solid rgba(255,255,255,0.85); box-shadow: 0 0 0 1px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(0,0,0,0.35);
+}
+body.touch #cross::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 2px #000;
+}
+body.touch #cross.dim { opacity: 0.35; }
+body.ui-open #cross { display: none; }
 
 #bubbles { position: absolute; inset: 0; }
 .bubble {

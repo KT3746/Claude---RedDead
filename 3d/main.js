@@ -832,6 +832,12 @@ function poseHuman(h, p) {
     h.body.position.y = Math.abs(Math.cos(p.phase || 0)) * 0.035 * Math.min(move, 1.6) + breathe;
     h.hips.rotation.x = 0.14 * Math.max(0, move - 1);
   }
+  if (p.kneel) {
+    h.legL.hp.rotation.set(-1.6, 0, 0); h.legL.kn.rotation.x = 1.6;
+    h.legR.hp.rotation.set(-0.2, 0, 0); h.legR.kn.rotation.x = 1.9;
+    h.body.position.y = -0.42; h.hips.rotation.x = 0.35;
+    h.armR.sh.rotation.set(-1.0 - Math.sin(performance.now() / 120) * 0.2, 0, 0); h.armR.el.rotation.x = -0.4;
+  }
   if (p.tip) { h.armR.sh.rotation.set(-2.6, 0, 0.25); h.armR.el.rotation.x = -1.2; h.hatG.position.y = 0.08 + Math.sin(p.tip * Math.PI) * 0.05; }
   else h.hatG.position.y = 0.08;
   if (p.aim) {
@@ -908,7 +914,7 @@ function poseHorse(h, phase, speed) {
 const G = {
   state: 'title', time: 17.2, day: 1, money: 12.5, ammo: 6, reserve: 36, reloading: 0,
   drunk: 0, menu: null, fading: false, muted: false, hatColor: '#2c2219', coatColor: '#4a3b2c', beard: true,
-  bottleHits: 0, gotLetter: false, shake: 0, health: 100, lastHit: 99, wanted: 0, bounty: null, lock: null,
+  bottleHits: 0, gotLetter: false, shake: 0, health: 100, lastHit: 99, wanted: 0, bounty: null, lock: null, valuables: {},
 };
 
 const player = {
@@ -1055,6 +1061,7 @@ function sfx(kind, vol = 1) {
   else if (kind === 'whistle') { tone(1500, 0.18, 'sine', 0.15, 0, 2300); tone(1700, 0.35, 'sine', 0.15, 0.22, 2600); }
   else if (kind === 'neigh') { tone(700, 0.6, 'sawtooth', 0.04 * vol, 0, 400); tone(900, 0.4, 'sawtooth', 0.025 * vol, 0.1, 500); }
   else if (kind === 'drink') { for (let i = 0; i < 3; i++) tone(300 + i * 40, 0.08, 'sine', 0.1, i * 0.15, 200); }
+  else if (kind === 'pickup') { tone(660, 0.08, 'triangle', 0.12); tone(990, 0.15, 'triangle', 0.1, 0.06); }
   else if (kind === 'click') tone(900, 0.03, 'square', 0.05);
   else if (kind === 'reload') { tone(300, 0.05, 'square', 0.07); tone(420, 0.05, 'square', 0.07, 0.3); tone(520, 0.05, 'square', 0.07, 0.6); }
   else if (kind === 'clop') { tone(180 + Math.random() * 40, 0.05, 'triangle', 0.06 * vol, 0, 90); }
@@ -1178,6 +1185,11 @@ function buildingMenu(b) {
     case 'store': {
       const opts = () => [
         { label: 'Munição de revólver (12)', desc: `Você tem ${G.reserve} de reserva.`, price: 1, fn: () => { G.reserve += 12; toast('Comprado', 'Munição +12'); return { options: opts() }; } },
+        (() => {
+          const n = Object.values(G.valuables).reduce((a, b) => a + b, 0);
+          const v = Object.entries(G.valuables).reduce((a, [k, q]) => a + (VALUABLES[k] || 0) * q, 0);
+          return { label: `Vender objetos de valor (${n})`, desc: n ? Object.entries(G.valuables).map(([k, q]) => `${q}× ${k}`).join(', ') : 'Revistando corpos você encontra relógios e anéis.', disabled: n === 0, fn: () => { earn(v); G.valuables = {}; toast('Vendido', `O dono do armazém pagou ${fmtMoney(v)}.`, 'gold'); return { options: opts() }; } };
+        })(),
         ...HAT_COLORS.map(([n, c]) => ({ label: `Chapéu ${n.toLowerCase()}`, desc: G.hatColor === c ? 'Você está usando este.' : 'Troca o seu chapéu.', disabled: G.hatColor === c, price: 3, fn: () => { setPlayerHat(c); toast('Chapéu novo', 'Elegante!', 'good'); return { options: opts() }; } })),
         ...COAT_COLORS.map(([n, c]) => ({ label: `Casaco ${n.toLowerCase()}`, desc: G.coatColor === c ? 'Você está usando este.' : 'Troca o seu casaco.', disabled: G.coatColor === c, price: 5, fn: () => { setPlayerCoat(c); toast('Casaco novo', 'Parece um pistoleiro de verdade.', 'good'); return { options: opts() }; } })),
         close,
@@ -1376,15 +1388,46 @@ document.addEventListener('gesturestart', (e) => e.preventDefault());
 // ---------------------------------------------------------------------
 // Interações
 // ---------------------------------------------------------------------
+// Saque de corpos (bandidos e moradores)
+const VALUABLES = { 'Relógio de bolso': 3, 'Anel de ouro': 5, 'Dente de ouro': 2, 'Maço de cartas': 0.5 };
+function lootable() {
+  const list = [];
+  for (const b of bandits) if (!b.alive && !b.looted) list.push(b);
+  for (const n of npcs) if (n.alive === false && !n.looted) list.push(n);
+  return list;
+}
+function lootBody(e) {
+  if (e.looted) return;
+  e.looted = true;
+  player.lootT = 1.0;
+  const bandit = e.kind === 'bandit';
+  const cash = Math.round(R(bandit ? 2 : 0.3, bandit ? 9 : 3) * 100) / 100;
+  const ammo = bandit ? 3 + Math.floor(Math.random() * 6) : Math.random() < 0.3 ? 2 : 0;
+  const found = [];
+  if (cash > 0) { earn(cash); found.push(fmtMoney(cash)); }
+  if (ammo) { G.reserve += ammo; found.push(`${ammo} balas`); }
+  const r = Math.random();
+  const item = r < (bandit ? 0.18 : 0.08) ? 'Anel de ouro' : r < (bandit ? 0.45 : 0.25) ? 'Relógio de bolso' : r < (bandit ? 0.6 : 0.35) ? 'Dente de ouro' : r < 0.5 ? 'Maço de cartas' : null;
+  if (item) { G.valuables[item] = (G.valuables[item] || 0) + 1; found.push(item.toLowerCase()); }
+  sfx('pickup');
+  toast('Corpo revistado', found.length ? `Você encontrou: ${found.join(', ')}.` + (item ? ' Venda objetos no Armazém.' : '') : 'Os bolsos estavam vazios.', 'gold');
+}
 function getInteraction() {
-  if (player.mounted) return { e: { label: 'Desmontar', fn: dismount } };
+  if (player.mounted) {
+    const near = lootable().some((e) => Math.hypot(horse.x - e.x, horse.z - e.z) < 4);
+    return { e: { label: near ? 'Desmontar (para revistar o corpo)' : 'Desmontar', fn: dismount } };
+  }
   let best = null, bd = 1e9;
   const consider = (d, max, info) => { if (d < max && d < bd) { bd = d; best = info; } };
   const labels = { saloon: 'Entrar no Saloon', hotel: 'Entrar no Hotel', store: 'Entrar no Armazém', bank: 'Entrar no Banco', barber: 'Entrar na Barbearia', church: 'Entrar na Igreja', sheriff: 'Falar com o Xerife', stable: 'Estábulo', post: 'Entrar no Correio', house: 'Bater na porta' };
   for (const b of BUILDINGS) consider(Math.hypot(player.x - b.doorX, player.z - b.doorZ), 2.2, { e: { label: labels[b.id], fn: () => buildingMenu(b) } });
   consider(Math.hypot(player.x - horse.x, player.z - horse.z) - 0.4, 2.6, { e: { label: `Montar ${horse.name}`, fn: mount }, f: { label: 'Acariciar', fn: petHorse } });
   for (const n of npcs) if (n.alive !== false) consider(Math.hypot(player.x - n.x, player.z - n.z), 2.2, { e: { label: `Cumprimentar ${n.name}`, fn: () => greet(n) } });
-  for (const b of bandits) if (!b.alive && !b.looted) consider(Math.hypot(player.x - b.x, player.z - b.z), 2.4, { e: { label: 'Revistar o corpo', fn: () => { b.looted = true; const c = Math.round(R(2, 8) * 100) / 100, a = 3 + Math.floor(Math.random() * 6); earn(c); G.reserve += a; toast('Revistado', `${fmtMoney(c)} e ${a} balas.`, 'gold'); } } });
+  // o corpo cai para trás: o ponto de revista fica no meio do corpo, não nos pés
+  for (const e of lootable()) {
+    const cx = e.x - Math.sin(e.heading) * 0.8, cz = e.z - Math.cos(e.heading) * 0.8;
+    consider(Math.min(Math.hypot(player.x - cx, player.z - cz), Math.hypot(player.x - e.x, player.z - e.z)) - 0.3, 2.6, { e: { label: 'Revistar o corpo', fn: () => lootBody(e) } });
+  }
   for (const it of interactables) consider(Math.hypot(player.x - it.x, player.z - it.z) + 0.3, it.r, { e: { label: it.label, fn: it.fn } });
   return best;
 }
@@ -1641,6 +1684,7 @@ function die() {
 }
 function banditDown(b) {
   b.alive = false; b.fall = 0;
+  if (!G.lootTip) { G.lootTip = true; setTimeout(() => toast('Dica', 'Chegue perto do corpo e toque em "Revistar o corpo" para pegar dinheiro, balas e objetos.'), 1200); }
   if (b.leader && G.bounty) {
     G.bounty.stage = 'return';
     say(player, 'Fim da linha.', 2);
@@ -1833,6 +1877,7 @@ function updatePlayer(dt) {
   }
   player.aimT = Math.max(0, player.aimT - dt);
   player.tipT = Math.max(0, player.tipT - dt);
+  player.lootT = Math.max(0, (player.lootT || 0) - dt);
   if (G.reloading > 0) { G.reloading -= dt; if (G.reloading <= 0) { const n = Math.min(6 - G.ammo, G.reserve); G.ammo += n; G.reserve -= n; G.reloading = 0; } }
 
   // aplica ao modelo
@@ -1842,9 +1887,10 @@ function updatePlayer(dt) {
     player.y = floorY(player.x, player.z);
     player.h.root.position.set(player.x, player.y, player.z);
     player.h.root.rotation.y = player.heading;
-    poseHuman(player.h, { phase: player.phase, move: player.move, aim: aiming || player.aimT > 0, pitch: look.pitch - 0.2, tip: player.tipT > 0 ? 1 - player.tipT / 0.8 : 0 });
+    poseHuman(player.h, { kneel: player.lootT > 0, phase: player.phase, move: player.lootT > 0 ? 0 : player.move, aim: aiming || player.aimT > 0, pitch: look.pitch - 0.2, tip: player.tipT > 0 ? 1 - player.tipT / 0.8 : 0 });
   }
   $('cross').classList.toggle('aim', aiming);
+  $('cross').classList.toggle('dim', IS_TOUCH && !!G.lock);
   return aiming;
 }
 function updateHorse(dt) {
@@ -1874,7 +1920,7 @@ function updateNPCs(dt) {
       n.h.root.rotation.x = -n.fall * Math.PI / 2; n.h.root.position.y = n.y + n.fall * 0.12;
       if (n.deadT > 45 && Math.hypot(n.x - player.x, n.z - player.z) > 60) {
         // um novo morador chega à cidade
-        const p = streetPoint(); n.x = p.x; n.z = p.z; n.alive = true; n.h.root.rotation.x = 0; n.flee = 0; n.wait = 2;
+        const p = streetPoint(); n.x = p.x; n.z = p.z; n.alive = true; n.looted = false; n.h.root.rotation.x = 0; n.flee = 0; n.wait = 2;
       }
       continue;
     }
@@ -2098,13 +2144,13 @@ const SAVE_KEY = 'pv3d-save-v1';
 function saveGame() {
   if (G.state !== 'play') return;
   const A = anchor();
-  store.set(SAVE_KEY, JSON.stringify({ v: 1, time: G.time, day: G.day, money: G.money, ammo: G.ammo, reserve: G.reserve, hat: G.hatColor, coat: G.coatColor, beard: G.beard, muted: G.muted, gotLetter: G.gotLetter, wanted: G.wanted, x: A.x, z: A.z }));
+  store.set(SAVE_KEY, JSON.stringify({ v: 1, time: G.time, day: G.day, money: G.money, ammo: G.ammo, reserve: G.reserve, hat: G.hatColor, coat: G.coatColor, beard: G.beard, muted: G.muted, gotLetter: G.gotLetter, wanted: G.wanted, valuables: G.valuables, x: A.x, z: A.z }));
 }
 function loadGame() {
   let d = null;
   try { d = JSON.parse(store.get(SAVE_KEY)); } catch (e) { d = null; }
   if (!d || d.v !== 1) return false;
-  Object.assign(G, { time: d.time, day: d.day, money: d.money, ammo: d.ammo, reserve: d.reserve, muted: !!d.muted, gotLetter: !!d.gotLetter, beard: d.beard !== false, wanted: d.wanted || 0 });
+  Object.assign(G, { time: d.time, day: d.day, money: d.money, ammo: d.ammo, reserve: d.reserve, muted: !!d.muted, gotLetter: !!d.gotLetter, beard: d.beard !== false, wanted: d.wanted || 0, valuables: d.valuables || {} });
   setPlayerHat(d.hat || G.hatColor); setPlayerCoat(d.coat || G.coatColor); player.h.beard.visible = G.beard;
   if (!isBlocked(d.x, d.z, 0.4)) { player.x = d.x; player.z = d.z; }
   return true;
@@ -2194,4 +2240,4 @@ requestAnimationFrame(frame);
 buildReady();
 
 // Exposto para testes automatizados
-window.__pv3d = { G, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer };
+window.__pv3d = { G, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer, lootBody, lootable };
