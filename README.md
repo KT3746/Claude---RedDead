@@ -17,6 +17,10 @@ Uma versão em terceira pessoa, feita com [Three.js](https://threejs.org) (WebGL
 - **Computador:** WASD para andar, mouse para olhar (clique na tela para travar o mouse), Shift para correr, E para interagir, H para chamar o cavalo, botão direito para mirar, clique para atirar.
 - **Celular:** arraste à esquerda para andar e à direita para girar a câmera. O botão 🔫 atira com mira automática.
 - **Gráficos:** na tela inicial, escolha Leve, Médio ou Alto. No celular, comece pelo Médio.
+- **Missões:** 6 missões de história (do primeiro encontro com o xerife até o bando de Dutch Callahan). O objetivo aparece no topo, um losango dourado mostra o caminho e o diário 📜 (tecla J) lista o progresso.
+- **A lei reage:** testemunhas gritam e fogem, e homens da lei vêm atrás de você (★ a ★★★). Fuja para longe deles ou renda-se no xerife. Lojas não atendem procurados.
+- **Saque:** revise corpos de bandidos, homens da lei e moradores; venda objetos de valor no Armazém.
+- **Brilho:** Normal, Claro ou Máximo (tela inicial ou botão ☀).
 
 Para rodar localmente, a pasta precisa ser servida por um servidor (módulos JavaScript não abrem direto do arquivo):
 

@@ -933,7 +933,9 @@ function poseHorse(h, phase, speed) {
 const G = {
   state: 'title', time: 14.5, day: 1, money: 12.5, ammo: 6, reserve: 36, reloading: 0,
   drunk: 0, menu: null, fading: false, muted: false, hatColor: '#2c2219', coatColor: '#4a3b2c', beard: true,
-  bottleHits: 0, gotLetter: false, shake: 0, health: 100, lastHit: 99, wanted: 0, bounty: null, lock: null, valuables: {},
+  bottleHits: 0, gotLetter: false, shake: 0, health: 100, lastHit: 99, wanted: 0, bounty: null, lock: null, valuables: {}, heat: 0, escapeT: 0,
+  stats: { sheriff: false, rode: false, drinks: 0, dice: 0, outfit: false, bounties: 0, gangStarted: false, gangKilled: false, gangDone: false },
+  quest: { i: 0, step: 0, base: { bottles: 0, bounties: 0 } },
 };
 
 const player = {
@@ -1126,15 +1128,21 @@ function updateHUD() {
   const ammo = G.reloading > 0 ? 'Recarregando…' : `${G.ammo} / ${G.reserve}`;
   const hp = Math.round(G.health);
   let obj = '';
-  if (G.wanted > 0) obj = `<b>PROCURADO</b>Recompensa de ${fmtMoney(G.wanted)} pela sua cabeça. Pague no Xerife.`;
-  else if (G.bounty && G.bounty.stage === 'hunt') obj = `<b>CAÇADA</b>Elimine ${G.bounty.name} (vermelho no minimapa).`;
-  else if (G.bounty) obj = `<b>CAÇADA</b>Volte ao Xerife para receber ${fmtMoney(G.bounty.reward)}.`;
-  const key = clock + G.money.toFixed(2) + ammo + hp + obj;
+  const mis = curMission(), st = curStep();
+  const bountyInMission = G.quest.i === 4 || G.quest.i === 5;
+  if (mis && st) obj = `<b>${mis.title.toUpperCase()}</b>${st.text()}`;
+  if (G.bounty && !bountyInMission) obj += `<small>${G.bounty.stage === 'hunt' ? `Caçada: elimine ${G.bounty.name}` : `Caçada: volte ao Xerife (${fmtMoney(G.bounty.reward)})`}</small>`;
+  if (!mis && !G.bounty) obj = '<b>LIVRE</b>Aceite caçadas com o Xerife ou explore o deserto.';
+  let wanted = '';
+  if (G.heat > 0) wanted = `PROCURADO ${'★'.repeat(G.heat)}${'☆'.repeat(3 - G.heat)} · ${fmtMoney(G.wanted)}<small>Fuja para longe da lei ou renda-se no Xerife</small>`;
+  else if (G.wanted > 0) wanted = `Recompensa pela sua cabeça: ${fmtMoney(G.wanted)}<small>Pague no Xerife</small>`;
+  const key = clock + G.money.toFixed(2) + ammo + hp + obj + wanted;
   if (key === lastHud) return;
   lastHud = key;
   $('hpFill').style.width = hp + '%';
   $('health').classList.toggle('low', hp < 35);
   $('objective').innerHTML = obj;
+  $('wanted').innerHTML = wanted; $('wanted').hidden = !wanted; $('wanted').classList.toggle('hot', G.heat > 0);
   $('clock').textContent = clock; $('money').textContent = fmtMoney(G.money);
   $('ammo').textContent = '🔫 ' + ammo; $('ammo').classList.toggle('low', G.ammo === 0);
 }
@@ -1181,11 +1189,13 @@ function setPlayerCoat(c) {
 
 function buildingMenu(b) {
   const close = { label: 'Sair', fn: () => false };
+  if (G.heat > 0 && b.id !== 'sheriff') { toast('Porta trancada', pick(['"Não atendemos procurados! Vá embora!"', '"Saia daqui antes que eu chame o xerife!"'])); return; }
+  if (b.id === 'sheriff') G.stats.sheriff = true;
   switch (b.id) {
     case 'saloon': {
       const opts = () => [
-        { label: 'Beber whisky', desc: 'Desce queimando. O mundo pode girar.', price: 1, fn: () => { sfx('drink'); G.drunk = clamp(G.drunk + 30, 0, 90); toast('Whisky', G.drunk > 50 ? 'O chão está se mexendo…' : 'Desce queimando.'); return { options: opts() }; } },
-        { label: 'Beber cerveja', price: 0.5, fn: () => { sfx('drink'); G.drunk = clamp(G.drunk + 10, 0, 90); toast('Cerveja', 'Gelada… mais ou menos.'); return { options: opts() }; } },
+        { label: 'Beber whisky', desc: 'Desce queimando. O mundo pode girar.', price: 1, fn: () => { G.stats.drinks++; sfx('drink'); G.drunk = clamp(G.drunk + 30, 0, 90); toast('Whisky', G.drunk > 50 ? 'O chão está se mexendo…' : 'Desce queimando.'); return { options: opts() }; } },
+        { label: 'Beber cerveja', price: 0.5, fn: () => { G.stats.drinks++; sfx('drink'); G.drunk = clamp(G.drunk + 10, 0, 90); toast('Cerveja', 'Gelada… mais ou menos.'); return { options: opts() }; } },
         { label: 'Jogar dados', desc: 'Aposte $5. Maior soma de dois dados vence.', price: 5, fn: () => { playDice(); return { options: opts() }; } },
         { label: 'Tocar piano', fn: () => { sfx('piano'); if (Math.random() < 0.6) { const tip = Math.round(Math.random() * 100) / 100 + 0.25; earn(tip); toast('Aplausos!', `Gorjeta de ${fmtMoney(tip)}.`, 'gold'); } else toast('Silêncio', 'Alguém tossiu no fundo do salão.'); return false; } },
         close,
@@ -1209,8 +1219,8 @@ function buildingMenu(b) {
           const v = Object.entries(G.valuables).reduce((a, [k, q]) => a + (VALUABLES[k] || 0) * q, 0);
           return { label: `Vender objetos de valor (${n})`, desc: n ? Object.entries(G.valuables).map(([k, q]) => `${q}× ${k}`).join(', ') : 'Revistando corpos você encontra relógios e anéis.', disabled: n === 0, fn: () => { earn(v); G.valuables = {}; toast('Vendido', `O dono do armazém pagou ${fmtMoney(v)}.`, 'gold'); return { options: opts() }; } };
         })(),
-        ...HAT_COLORS.map(([n, c]) => ({ label: `Chapéu ${n.toLowerCase()}`, desc: G.hatColor === c ? 'Você está usando este.' : 'Troca o seu chapéu.', disabled: G.hatColor === c, price: 3, fn: () => { setPlayerHat(c); toast('Chapéu novo', 'Elegante!', 'good'); return { options: opts() }; } })),
-        ...COAT_COLORS.map(([n, c]) => ({ label: `Casaco ${n.toLowerCase()}`, desc: G.coatColor === c ? 'Você está usando este.' : 'Troca o seu casaco.', disabled: G.coatColor === c, price: 5, fn: () => { setPlayerCoat(c); toast('Casaco novo', 'Parece um pistoleiro de verdade.', 'good'); return { options: opts() }; } })),
+        ...HAT_COLORS.map(([n, c]) => ({ label: `Chapéu ${n.toLowerCase()}`, desc: G.hatColor === c ? 'Você está usando este.' : 'Troca o seu chapéu.', disabled: G.hatColor === c, price: 3, fn: () => { G.stats.outfit = true; setPlayerHat(c); toast('Chapéu novo', 'Elegante!', 'good'); return { options: opts() }; } })),
+        ...COAT_COLORS.map(([n, c]) => ({ label: `Casaco ${n.toLowerCase()}`, desc: G.coatColor === c ? 'Você está usando este.' : 'Troca o seu casaco.', disabled: G.coatColor === c, price: 5, fn: () => { G.stats.outfit = true; setPlayerCoat(c); toast('Casaco novo', 'Parece um pistoleiro de verdade.', 'good'); return { options: opts() }; } })),
         close,
       ];
       openMenu('Armazém Geral', 'Roupas, munição e mercadorias de Saint Denis.', opts());
@@ -1232,10 +1242,12 @@ function buildingMenu(b) {
     case 'sheriff':
       {
         const opts = [];
-        if (G.wanted > 0) opts.push({ label: 'Pagar a multa', desc: 'Limpe seu nome com a lei.', price: G.wanted, fn: () => { G.wanted = 0; toast('Nome limpo', 'Você não é mais procurado.', 'good'); return false; } });
-        if (G.bounty && G.bounty.stage === 'return') opts.push({ label: `Entregar ${G.bounty.name}`, desc: 'Receber a recompensa.', fn: () => { const r = G.bounty.reward; earn(r); banner('RECOMPENSA RECEBIDA', `+${fmtMoney(r)}`); G.bounty = null; clearCamp(); return false; } });
-        if (!G.bounty) opts.push({ label: 'Aceitar caçada de recompensa', desc: 'Bandidos armados num esconderijo fora da cidade. Eles atiram de volta!', fn: () => { startBounty(); return false; } });
-        else if (G.bounty.stage === 'hunt') opts.push({ label: 'Desistir da caçada', fn: () => { G.bounty = null; clearCamp(); toast('Caçada cancelada', 'O xerife balança a cabeça.'); return false; } });
+        if (G.heat > 0) opts.push({ label: 'Render-se e pagar a recompensa', desc: 'Os homens da lei param de te perseguir.', price: G.wanted + 5, fn: () => { G.wanted = 0; clearLaw(); toast('Você se rendeu', 'Pagou a recompensa e ficou livre. Comporte-se.', 'good'); return false; } });
+        else if (G.wanted > 0) opts.push({ label: 'Pagar a recompensa', desc: 'Limpe seu nome com a lei.', price: G.wanted, fn: () => { G.wanted = 0; toast('Nome limpo', 'Você não é mais procurado.', 'good'); return false; } });
+        if (!G.bounty && !G.stats.gangStarted && G.quest.i >= 5) opts.push({ label: 'Perguntar sobre Dutch Callahan', desc: 'O bandido mais procurado de Novo Hanover. $100.', fn: () => { G.stats.gangStarted = true; toast('Xerife Malloy', '"Callahan e mais quatro estão escondidos a oeste. Leve bastante munição."'); startBounty({ gang: true }); return false; } });
+        if (G.bounty && G.bounty.stage === 'return') opts.push({ label: `Entregar ${G.bounty.name}`, desc: 'Receber a recompensa.', fn: () => { const r = G.bounty.reward; earn(r); banner('RECOMPENSA RECEBIDA', `+${fmtMoney(r)}`); G.stats.bounties++; if (G.bounty.gang) G.stats.gangDone = true; G.bounty = null; clearCamp(); return false; } });
+        if (!G.bounty && G.heat === 0) opts.push({ label: 'Aceitar caçada de recompensa', desc: 'Bandidos armados num esconderijo fora da cidade. Eles atiram de volta!', fn: () => { startBounty(); return false; } });
+        else if (G.bounty && G.bounty.stage === 'hunt') opts.push({ label: 'Desistir da caçada', fn: () => { G.bounty = null; clearCamp(); toast('Caçada cancelada', 'O xerife balança a cabeça.'); return false; } });
         opts.push({ label: 'Conversar com o xerife', fn: () => { toast('Xerife Malloy', pick(['"Garrafas lá atrás, se quiser treinar a mira."', '"Mire no peito. Na cabeça, se tiver coragem."', '"Ande a cavalo e em zigue-zague: fica difícil te acertar."', '"Atirou num inocente? Vai pagar por isso."'])); return false; } });
         opts.push(close);
         openMenu('Gabinete do Xerife', G.wanted > 0 ? 'O xerife te olha de cara feia.' : 'Cartazes de procurados cobrem a parede.', opts);
@@ -1259,6 +1271,7 @@ function buildingMenu(b) {
   }
 }
 function playDice() {
+  G.stats.dice++;
   sfx('dice');
   const d = () => 1 + ((Math.random() * 6) | 0);
   const a = [d(), d()], b = [d(), d()], sa = a[0] + a[1], sb = b[0] + b[1];
@@ -1407,11 +1420,102 @@ document.addEventListener('gesturestart', (e) => e.preventDefault());
 // ---------------------------------------------------------------------
 // Interações
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Missões (história principal)
+// ---------------------------------------------------------------------
+const doorOf = (id) => { const b = BUILDINGS.find((q) => q.id === id); return { x: b.doorX, z: b.doorZ }; };
+const RANGE_SPOT = () => ({ x: -69, z: 26 });
+const gangCount = () => [bandits.filter((q) => !q.alive).length, bandits.length || 5];
+const MISSIONS = [
+  { title: 'Forasteiro em Vale Esperança', reward: 5, intro: 'Apresente-se ao xerife da cidade.', steps: [
+    { text: () => 'Fale com o Xerife', target: () => doorOf('sheriff'), done: () => G.stats.sheriff },
+    { text: () => `Monte no seu cavalo, ${horse.name} (chegue perto e toque em Montar)`, target: () => (player.mounted ? null : horse), done: () => G.stats.rode },
+  ] },
+  { title: 'Mira afiada', reward: 5, intro: 'Treine a pontaria antes de enfrentar bandidos.', steps: [
+    { text: () => `Quebre 5 garrafas no estande atrás do Xerife (${clamp(G.bottleHits - G.quest.base.bottles, 0, 5)}/5)`, target: RANGE_SPOT, done: () => G.bottleHits - G.quest.base.bottles >= 5 },
+  ] },
+  { title: 'Uma noite no saloon', reward: 3, intro: 'Todo forasteiro precisa de um drinque.', steps: [
+    { text: () => 'Beba algo no Saloon', target: () => doorOf('saloon'), done: () => G.stats.drinks >= 1 },
+    { text: () => 'Jogue dados com o croupier', target: () => doorOf('saloon'), done: () => G.stats.dice >= 1 },
+  ] },
+  { title: 'Pinta de pistoleiro', reward: 2, intro: 'Um caçador de recompensas precisa de estilo.', steps: [
+    { text: () => 'Compre um chapéu ou casaco novo no Armazém', target: () => doorOf('store'), done: () => G.stats.outfit },
+  ] },
+  { title: 'Caçador de recompensas', reward: 10, intro: 'O xerife tem trabalho para você.', steps: [
+    { text: () => 'Aceite uma caçada de recompensa com o Xerife', target: () => doorOf('sheriff'), done: () => !!G.bounty || G.stats.bounties > G.quest.base.bounties },
+    { text: () => (G.bounty ? `Elimine ${G.bounty.name}` : 'Elimine o alvo'), target: () => (G.bounty && G.bounty.stage === 'hunt' ? { x: G.bounty.x, z: G.bounty.z } : null), done: () => (G.bounty && G.bounty.stage === 'return') || G.stats.bounties > G.quest.base.bounties },
+    { text: () => 'Receba a recompensa com o Xerife', target: () => doorOf('sheriff'), done: () => G.stats.bounties > G.quest.base.bounties },
+  ] },
+  { title: 'O bando de Callahan', reward: 50, intro: 'O homem mais procurado de Novo Hanover.', steps: [
+    { text: () => (G.bounty && !G.bounty.gang ? 'Termine a caçada atual e fale com o Xerife sobre Callahan' : 'Pergunte ao Xerife sobre Dutch Callahan'), target: () => doorOf('sheriff'), done: () => G.stats.gangStarted },
+    { text: () => { const [d, t] = gangCount(); return `Elimine o bando de Callahan (${d}/${t})`; }, target: () => (G.bounty && G.bounty.gang && G.bounty.stage === 'hunt' ? { x: G.bounty.x, z: G.bounty.z } : null), done: () => G.stats.gangKilled },
+    { text: () => 'Volte ao Xerife para receber $100', target: () => doorOf('sheriff'), done: () => G.stats.gangDone },
+  ] },
+];
+function curMission() { return MISSIONS[G.quest.i]; }
+function curStep() { const m = curMission(); return m ? m.steps[G.quest.step] : null; }
+function missionBase() { return { bottles: G.bottleHits, bounties: G.stats.bounties }; }
+function updateQuest() {
+  const m = curMission(), st = curStep();
+  if (!m || !st || G.fading || G.menu) return;
+  if (!st.done()) return;
+  G.quest.step++;
+  if (G.quest.step >= m.steps.length) {
+    earn(m.reward);
+    banner('MISSÃO CONCLUÍDA', `${m.title} · +${fmtMoney(m.reward)}`);
+    G.quest.i++; G.quest.step = 0; G.quest.base = missionBase();
+    const next = curMission();
+    if (next) setTimeout(() => toast('Nova missão: ' + next.title, next.intro, 'gold'), 3200);
+    else setTimeout(() => banner('LENDA DO VELHO OESTE', 'Você completou a história. Continue caçando recompensas!'), 3400);
+  } else {
+    sfx('pickup');
+    toast('Objetivo concluído', 'Próximo: ' + curStep().text(), 'good');
+  }
+}
+function questTarget() {
+  const st = curStep();
+  if (G.bounty && G.bounty.stage === 'hunt' && (!st || !st.target() )) return { x: G.bounty.x, z: G.bounty.z };
+  const t = st ? st.target() : null;
+  if (t) return t;
+  if (G.bounty && G.bounty.stage === 'return') return doorOf('sheriff');
+  return null;
+}
+// marcador na tela: losango dourado com a distância
+const markV = new THREE.Vector3();
+function drawMarker() {
+  const el = $('marker');
+  const t = G.state === 'play' && !G.menu ? questTarget() : null;
+  if (!t) { el.hidden = true; return; }
+  const A = anchor();
+  const dist = Math.hypot(t.x - A.x, t.z - A.z);
+  if (dist < 3.5) { el.hidden = true; return; }
+  el.hidden = false;
+  markV.set(t.x, height(t.x, t.z) + 2.6, t.z);
+  const cam = markV.clone().applyMatrix4(camera.matrixWorldInverse);
+  const W = window.innerWidth, H = window.innerHeight, pad = 34;
+  let sx, sy;
+  if (cam.z < 0) { markV.project(camera); sx = (markV.x * 0.5 + 0.5) * W; sy = (-markV.y * 0.5 + 0.5) * H; }
+  else { sx = cam.x > 0 ? W - pad : pad; sy = H * 0.45; }
+  sx = clamp(sx, pad, W - pad); sy = clamp(sy, pad + 60, H - pad - 90);
+  el.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -50%)`;
+  el.querySelector('.d').textContent = Math.round(dist) + ' m';
+}
+function openJournal() {
+  const opts = MISSIONS.map((m, i) => {
+    if (i < G.quest.i) return { label: '✓ ' + m.title, desc: 'Concluída', disabled: true, fn: () => false };
+    if (i === G.quest.i) return { label: '▶ ' + m.title, desc: curStep() ? curStep().text() : '', fn: () => false };
+    return { label: '· ' + (i === G.quest.i + 1 ? m.title : '???'), desc: 'Ainda não disponível', disabled: true, fn: () => false };
+  });
+  opts.push({ label: 'Fechar', fn: () => false });
+  openMenu('Diário', `Missões concluídas: ${Math.min(G.quest.i, MISSIONS.length)}/${MISSIONS.length} · Caçadas: ${G.stats.bounties}`, opts);
+}
+
 // Saque de corpos (bandidos e moradores)
 const VALUABLES = { 'Relógio de bolso': 3, 'Anel de ouro': 5, 'Dente de ouro': 2, 'Maço de cartas': 0.5 };
 function lootable() {
   const list = [];
   for (const b of bandits) if (!b.alive && !b.looted) list.push(b);
+  for (const l of lawmen) if (!l.alive && !l.looted) list.push(l);
   for (const n of npcs) if (n.alive === false && !n.looted) list.push(n);
   return list;
 }
@@ -1419,7 +1523,7 @@ function lootBody(e) {
   if (e.looted) return;
   e.looted = true;
   player.lootT = 1.0;
-  const bandit = e.kind === 'bandit';
+  const bandit = e.kind === 'bandit' || e.kind === 'law';
   const cash = Math.round(R(bandit ? 2 : 0.3, bandit ? 9 : 3) * 100) / 100;
   const ammo = bandit ? 3 + Math.floor(Math.random() * 6) : Math.random() < 0.3 ? 2 : 0;
   const found = [];
@@ -1451,6 +1555,7 @@ function getInteraction() {
   return best;
 }
 function mount() {
+  G.stats.rode = true;
   player.mounted = true; horse.state = 'ridden';
   horse.h.body.add(player.h.root);
   player.h.root.position.set(0, 0.86, 0.02); player.h.root.rotation.set(0, 0, 0);
@@ -1579,18 +1684,18 @@ const campMeshes = [];
 const BOUNTY_SPOTS = [{ x: 175, z: -80 }, { x: -190, z: 85 }, { x: 75, z: 165 }, { x: -70, z: -175 }];
 const OUTLAW_NAMES = ['"Dentuço" McGraw', 'Josiah "Cascavel" Trent', 'Big Jim Colby', 'Dutch Callahan', 'Mickey "Olho Torto" Reyes'];
 const BANDIT_LINES = ['Um caçador de recompensas!', 'Peguem ele, rapazes!', 'Você não vai me levar vivo!', 'Fogo nele!'];
-function makeBandit(x, z, leader) {
+function makeBandit(x, z, leader, hp) {
   const h = createHuman({ skin: pick(SKINS), shirt: '#7a6a5a', coat: leader ? '#2a2420' : pick(['#3a2a22', '#2d2a28', '#4a2f2a']), pants: '#2a2622', hat: leader ? '#1b1b1b' : pick(['#3a2a1a', '#2c2219']), bandana: '#8a1a1a', beard: true });
   h.root.userData.dynamic = true; scene.add(h.root);
-  return { kind: 'bandit', x, z, y: height(x, z), heading: R(0, 6), phase: 0, move: 0, h, hp: leader ? 4 : 2, alive: true, alert: false, leader, shootT: R(1.2, 2.2), tx: 0, tz: 0, stuck: 0, fall: 0, looted: false, aimT: 0 };
+  return { kind: 'bandit', x, z, y: height(x, z), heading: R(0, 6), phase: 0, move: 0, h, hp: hp || (leader ? 4 : 2), maxHp: hp || (leader ? 4 : 2), alive: true, alert: false, leader, shootT: R(1.2, 2.2), tx: 0, tz: 0, stuck: 0, fall: 0, looted: false, aimT: 0 };
 }
 function addCampMesh(m) { m.userData.dynamic = true; scene.add(m); campMeshes.push(m); return m; }
-function startBounty() {
-  let spot = pick(BOUNTY_SPOTS), sx = spot.x, sz = spot.z;
+function startBounty(opts = {}) {
+  let spot = opts.gang ? BOUNTY_SPOTS[1] : pick(BOUNTY_SPOTS), sx = spot.x, sz = spot.z;
   for (let k = 0; k < 30 && isBlocked(sx, sz, 3); k++) { sx = spot.x + R(-12, 12); sz = spot.z + R(-12, 12); }
-  const name = pick(OUTLAW_NAMES);
-  const count = 2 + (Math.random() < 0.5 ? 1 : 0);
-  G.bounty = { name, x: sx, z: sz, stage: 'hunt', reward: 20 + count * 10 };
+  const name = opts.gang ? 'Dutch Callahan' : pick(OUTLAW_NAMES.filter((n) => n !== 'Dutch Callahan'));
+  const count = opts.gang ? 5 : 2 + (Math.random() < 0.5 ? 1 : 0);
+  G.bounty = { name, x: sx, z: sz, stage: 'hunt', reward: opts.gang ? 100 : 20 + count * 10, gang: !!opts.gang };
   // acampamento: fogueira e barraca
   const y = height(sx, sz);
   for (let i = 0; i < 6; i++) { const log = addCampMesh(new THREE.Mesh(geo('log', () => new THREE.CylinderGeometry(0.07, 0.07, 0.8, 6)), M('#3a2414'))); log.position.set(sx + Math.cos(i) * 0.2, y + 0.1, sz + Math.sin(i) * 0.2); log.rotation.set(Math.PI / 2, i, 0); }
@@ -1604,7 +1709,8 @@ function startBounty() {
   for (let i = 0; i < count; i++) {
     let bx = sx + Math.cos(i * 2.1) * 3, bz = sz + Math.sin(i * 2.1) * 3;
     for (let k = 0; k < 20 && isBlocked(bx, bz, 0.4); k++) { bx += R(-1, 1); bz += R(-1, 1); }
-    const b = makeBandit(bx, bz, i === 0);
+    const b = makeBandit(bx, bz, i === 0, opts.gang ? (i === 0 ? 8 : 3) : 0);
+    if (opts.gang && i === 0) { b.h.hatMeshes.forEach((m) => { m.material = M('#e8e0cc'); }); }
     b.heading = Math.atan2(sx - bx, sz - bz);
     bandits.push(b);
   }
@@ -1623,48 +1729,117 @@ function hasLOS(fx, fy, fz, tx, ty, tz) {
   raycaster.set(TMP, TMP2); raycaster.far = d;
   return raycaster.intersectObjects(blockers, false).length === 0;
 }
+function updateGunman(b, dt, A, list, alertR, lines) {
+  if (!b.alive) {
+    b.fall = Math.min(1, b.fall + dt * 3); b.deadT = (b.deadT || 0) + dt;
+    b.h.root.rotation.x = -b.fall * Math.PI / 2;
+    b.h.root.position.y = b.y + b.fall * 0.12;
+    return;
+  }
+  const d = Math.hypot(A.x - b.x, A.z - b.z);
+  b.aimT = Math.max(0, b.aimT - dt);
+  if (!b.alert && d < alertR) {
+    for (const q of list) q.alert = true;
+    if (b.leader || b.kind === 'law' || list.every((q) => !q.leader || !q.alive)) say(b, pick(lines), 2.5);
+  }
+  if (b.alert && d < 110) {
+    if (!b.tx || Math.hypot(b.tx - b.x, b.tz - b.z) < 0.8 || b.stuck > 1.2) {
+      const a = Math.atan2(b.x - A.x, b.z - A.z) + R(-0.9, 0.9);
+      const want = clamp(d, b.kind === 'law' ? 9 : 12, 22);
+      b.tx = A.x + Math.sin(a) * want; b.tz = A.z + Math.cos(a) * want; b.stuck = 0;
+    }
+    const sp = b.kind === 'law' && d > 30 ? 5 : 3.2;
+    const dx = b.tx - b.x, dz = b.tz - b.z, dd = Math.hypot(dx, dz) || 1;
+    const moved = moveCircle(b, (dx / dd) * sp * dt, (dz / dd) * sp * dt, 0.3);
+    b.stuck = moved ? 0 : b.stuck + dt;
+    b.move = lerp(b.move, sp > 4 ? 2 : 1.4, clamp(dt * 5, 0, 1));
+    b.phase += dt * (sp > 4 ? 11 : 9);
+    // encara o jogador enquanto atira
+    b.heading += angDiff(b.heading, Math.atan2(A.x - b.x, A.z - b.z)) * clamp(dt * 8, 0, 1);
+    b.shootT -= dt;
+    if (b.shootT <= 0 && d < 45 && G.state === 'play' && !G.fading) {
+      b.shootT = R(1.3, 2.5);
+      const tyA = (A.y || 0) + (player.mounted ? 2.2 : 1.3);
+      if (hasLOS(b.x, b.y + 1.5, b.z, A.x, tyA, A.z)) banditShoot(b, d);
+    }
+  } else b.move = lerp(b.move, 0, clamp(dt * 5, 0, 1));
+  b.y = height(b.x, b.z);
+  b.h.root.position.set(b.x, b.y, b.z);
+  b.h.root.rotation.y = b.heading;
+  poseHuman(b.h, { phase: b.phase, move: b.move, aim: b.alert && (b.aimT > 0 || d < 45), pitch: 0 });
+}
 function updateBandits(dt) {
   const A = anchor();
-  for (const b of bandits) {
-    if (!b.alive) {
-      b.fall = Math.min(1, b.fall + dt * 3);
-      b.h.root.rotation.x = -b.fall * Math.PI / 2;
-      b.h.root.position.y = b.y + b.fall * 0.12;
-      continue;
-    }
-    const d = Math.hypot(A.x - b.x, A.z - b.z);
-    b.aimT = Math.max(0, b.aimT - dt);
-    if (!b.alert && d < 40) {
-      for (const q of bandits) q.alert = true;
-      if (b.leader || bandits.every((q) => !q.leader || !q.alive)) say(b, pick(BANDIT_LINES), 2.5);
-    }
-    if (b.alert && d < 90) {
-      if (!b.tx || Math.hypot(b.tx - b.x, b.tz - b.z) < 0.8 || b.stuck > 1.2) {
-        const a = Math.atan2(b.x - A.x, b.z - A.z) + R(-0.9, 0.9);
-        const want = clamp(d, 12, 22);
-        b.tx = A.x + Math.sin(a) * want; b.tz = A.z + Math.cos(a) * want; b.stuck = 0;
-      }
-      const dx = b.tx - b.x, dz = b.tz - b.z, dd = Math.hypot(dx, dz) || 1;
-      const moved = moveCircle(b, (dx / dd) * 3.2 * dt, (dz / dd) * 3.2 * dt, 0.3);
-      b.stuck = moved ? 0 : b.stuck + dt;
-      b.move = lerp(b.move, 1.4, clamp(dt * 5, 0, 1));
-      b.phase += dt * 9;
-      // encara o jogador enquanto atira
-      b.heading += angDiff(b.heading, Math.atan2(A.x - b.x, A.z - b.z)) * clamp(dt * 8, 0, 1);
-      b.shootT -= dt;
-      if (b.shootT <= 0 && d < 45 && G.state === 'play' && !G.fading) {
-        b.shootT = R(1.3, 2.5);
-        const tyA = (A.y || 0) + (player.mounted ? 2.2 : 1.3);
-        if (hasLOS(b.x, b.y + 1.5, b.z, A.x, tyA, A.z)) banditShoot(b, d);
-      }
-    } else b.move = lerp(b.move, 0, clamp(dt * 5, 0, 1));
-    b.y = height(b.x, b.z);
-    b.h.root.position.set(b.x, b.y, b.z);
-    b.h.root.rotation.y = b.heading;
-    poseHuman(b.h, { phase: b.phase, move: b.move, aim: b.alert && b.aimT > 0 || (b.alert && d < 45), pitch: 0 });
-  }
+  const alertR = G.bounty && G.bounty.gang ? 55 : 40;
+  for (const b of bandits) updateGunman(b, dt, A, bandits, alertR, BANDIT_LINES);
   const flame = campMeshes.find((m) => m.userData.flame);
   if (flame) { const s = 1 + Math.sin(performance.now() / 90) * 0.12; flame.scale.set(s, 1 + Math.sin(performance.now() / 70) * 0.18, s); }
+}
+
+// ---------------------------------------------------------------------
+// A lei: testemunhas, nível de procurado e homens da lei
+// ---------------------------------------------------------------------
+const lawmen = [];
+const LAW_LINES = ['Parado! Em nome da lei!', 'Largue a arma!', 'Você está preso, bandido!', 'Cerquem ele!', 'Não deixem ele fugir!'];
+let lawSpawnT = 0;
+function makeLawman(x, z) {
+  const h = createHuman({ skin: pick(SKINS), shirt: '#c8bca4', coat: '#3a3c46', pants: '#2a2a30', hat: '#1b1b1b', beard: Math.random() < 0.5 });
+  const badge = new THREE.Mesh(geo('badge', () => new THREE.CylinderGeometry(0.04, 0.04, 0.012, 5)), M('#e0b84a', { metalness: 0.8, roughness: 0.3 }));
+  badge.rotation.x = Math.PI / 2; badge.position.set(-0.09, 0.5, 0.15); h.hips.add(badge);
+  h.root.userData.dynamic = true; scene.add(h.root);
+  return { kind: 'law', x, z, y: height(x, z), heading: 0, phase: 0, move: 0, h, hp: 3, maxHp: 3, alive: true, alert: true, leader: false, shootT: R(1.8, 3), tx: 0, tz: 0, stuck: 0, fall: 0, looted: false, aimT: 0, deadT: 0 };
+}
+function spawnLawman() {
+  const A = anchor();
+  const sh = BUILDINGS.find((b) => b.id === 'sheriff');
+  let x, z;
+  if (Math.hypot(A.x - sh.doorX, A.z - sh.doorZ) < 140) { x = sh.doorX + R(-3, 3); z = sh.doorZ + R(-0.5, 0.5); }
+  else { const a = Math.random() * Math.PI * 2; x = A.x + Math.cos(a) * 55; z = A.z + Math.sin(a) * 55; }
+  for (let k = 0; k < 20 && isBlocked(x, z, 0.4); k++) { x += R(-3, 3); z += R(-3, 3); }
+  lawmen.push(makeLawman(x, z));
+}
+function reportCrime(kind, x, z) {
+  let witnesses = 0;
+  for (const q of npcs) {
+    if (q.alive === false) continue;
+    const d = Math.hypot(q.x - x, q.z - z);
+    if (d < 60) { q.flee = 15; q.wait = 0; q.stuck = 0; }
+    if (d < 45) { witnesses++; if (Math.random() < 0.6) say(q, pick(['Assassino!', 'Socorro! Xerife!', 'Chamem a lei!', 'Corram!', 'Meu Deus!']), 2.5); }
+  }
+  const inTown = Math.abs(x) < 130 && Math.abs(z) < 60;
+  if (!witnesses && !inTown && kind !== 'law') { toast('Ninguém viu', 'Não houve testemunhas… desta vez.'); return; }
+  const first = !G.heat;
+  G.heat = Math.min(3, (G.heat || 0) + 1);
+  G.escapeT = 0;
+  lawSpawnT = Math.min(lawSpawnT, first ? 3 : 1);
+  if (first) banner('PROCURADO', 'Testemunhas chamaram a lei!');
+  else toast('A situação piorou', `Procurado ${'★'.repeat(G.heat)} — mais homens da lei a caminho.`);
+}
+function clearLaw() {
+  for (const l of lawmen) scene.remove(l.h.root);
+  lawmen.length = 0; G.heat = 0; G.escapeT = 0;
+}
+function updateLaw(dt) {
+  const A = anchor();
+  if (G.heat > 0) {
+    const alive = lawmen.filter((l) => l.alive).length;
+    lawSpawnT -= dt;
+    if (lawSpawnT <= 0 && alive < Math.min(6, G.heat * 2)) { spawnLawman(); lawSpawnT = 2.5; }
+    const near = lawmen.some((l) => l.alive && Math.hypot(l.x - A.x, l.z - A.z) < 80);
+    G.escapeT = near ? 0 : (G.escapeT || 0) + dt;
+    if (G.escapeT > 20) {
+      G.heat = 0; G.escapeT = 0;
+      toast('Você despistou a lei', `A recompensa de ${fmtMoney(G.wanted)} continua. Pague no Xerife para limpar seu nome.`, 'good');
+    }
+  }
+  for (const l of lawmen) updateGunman(l, dt, A, lawmen, G.heat > 0 ? 999 : 0, LAW_LINES);
+  if (!G.heat) {
+    for (let i = lawmen.length - 1; i >= 0; i--) {
+      const l = lawmen[i];
+      l.alert = false;
+      if (Math.hypot(l.x - A.x, l.z - A.z) > 60 || (!l.alive && l.deadT > 40)) { scene.remove(l.h.root); lawmen.splice(i, 1); }
+    }
+  }
 }
 function banditShoot(b, d) {
   b.aimT = 0.6;
@@ -1690,13 +1865,19 @@ function die() {
   if (G.fading) return;
   G.health = 0;
   fade('VOCÊ MORREU', () => {
-    const lost = Math.round(G.money * 0.2 * 100) / 100;
+    let lost = Math.round(G.money * 0.2 * 100) / 100;
+    if (G.heat > 0 || G.wanted > 0) {
+      const fine = Math.min(G.money, G.wanted + 5);
+      G.money -= fine; G.wanted = 0; clearLaw();
+      toast('A lei te pegou', `Confiscaram ${fmtMoney(fine)} para pagar a recompensa.`);
+      lost = 0;
+    }
     G.money -= lost; G.health = 100;
     if (player.mounted) { player.mounted = false; horse.state = 'idle'; scene.add(player.h.root); }
     const hotel = BUILDINGS.find((b) => b.id === 'hotel');
     player.x = hotel.doorX; player.z = hotel.doorZ + 2.5;
     look.yaw = player.heading + Math.PI;
-    for (const b of bandits) if (b.alive) { b.alert = false; b.hp = b.leader ? 4 : 2; }
+    for (const b of bandits) if (b.alive) { b.alert = false; b.hp = b.maxHp || 2; }
     advanceTime(4);
     toast('Você sobreviveu… por pouco', lost > 0 ? `O médico cobrou ${fmtMoney(lost)}.` : 'Você acordou na frente do hotel.');
   });
@@ -1704,7 +1885,11 @@ function die() {
 function banditDown(b) {
   b.alive = false; b.fall = 0;
   if (!G.lootTip) { G.lootTip = true; setTimeout(() => toast('Dica', 'Chegue perto do corpo e toque em "Revistar o corpo" para pegar dinheiro, balas e objetos.'), 1200); }
-  if (b.leader && G.bounty) {
+  if (G.bounty && G.bounty.gang) {
+    const left = bandits.filter((q) => q.alive).length;
+    if (left === 0) { G.bounty.stage = 'return'; G.stats.gangKilled = true; toast('Bando eliminado', 'O bando de Callahan acabou. Volte ao Xerife.', 'gold'); }
+    else if (b.leader) toast('Callahan caiu!', `Ainda restam ${left} do bando.`, 'gold');
+  } else if (b.leader && G.bounty) {
     G.bounty.stage = 'return';
     say(player, 'Fim da linha.', 2);
     toast('Alvo eliminado', `${G.bounty.name} está morto. Volte ao Xerife para receber.`, 'gold');
@@ -1713,8 +1898,8 @@ function banditDown(b) {
 function killNPC(n) {
   n.alive = false; n.fall = 0; n.deadT = 0;
   G.wanted += 15;
-  toast('Crime testemunhado', `Você matou ${n.name}. Há uma recompensa de ${fmtMoney(G.wanted)} pela sua cabeça — pague no Xerife.`);
-  for (const q of npcs) if (q.alive && Math.hypot(q.x - n.x, q.z - n.z) < 40) { q.flee = 10; if (Math.random() < 0.4) say(q, pick(['Assassino!', 'Socorro! Xerife!', 'Corram!']), 2); }
+  toast('Assassinato', `Você matou ${n.name}. Recompensa pela sua cabeça: ${fmtMoney(G.wanted)}.`);
+  reportCrime('murder', n.x, n.z);
 }
 
 // Mira: acha o alvo mais perto do centro da tela (celular) — nunca moradores
@@ -1733,6 +1918,7 @@ function updateLock(dt) {
   camera.getWorldDirection(camFwd);
   const cands = [];
   for (const b of bandits) if (b.alive) cands.push({ t: b, hostile: true, max: 55 });
+  if (G.heat > 0) for (const l of lawmen) if (l.alive) cands.push({ t: l, hostile: true, max: 55 });
   for (const b of bottles) if (b.alive) { b.kind = 'bottle'; cands.push({ t: b, hostile: false, max: 32 }); }
   const scored = [];
   for (const c of cands) {
@@ -1815,6 +2001,7 @@ function shoot() {
     if (raycaster.ray.distanceSqToPoint(c) < tol * tol) best = { d: along, kind: 'bottle', t: b, point: c.clone() };
   }
   for (const b of bandits) if (b.alive) { const h = rayHitHuman(raycaster.ray, b, best.d); if (h) best = { d: h.along, kind: 'bandit', t: b, head: h.head }; }
+  for (const l of lawmen) if (l.alive) { const h = rayHitHuman(raycaster.ray, l, best.d); if (h) best = { d: h.along, kind: 'law', t: l, head: h.head }; }
   for (const n of npcs) if (n.alive) { const h = rayHitHuman(raycaster.ray, n, best.d); if (h) best = { d: h.along, kind: 'npc', t: n, head: h.head }; }
   if (!best.point || best.kind === 'bandit' || best.kind === 'npc') best.point = from.clone().addScaledVector(dir, best.d);
 
@@ -1828,6 +2015,17 @@ function shoot() {
     spawnPuff(best.point, 0x8a1010, 0.35, 0.5);
     if (b.hp <= 0) { banditDown(b); showHitmark(true, sx, sy); if (best.head) toast('Tiro na cabeça!', '', 'gold'); }
     else showHitmark(false, sx, sy);
+  } else if (best.kind === 'law') {
+    const l = best.t;
+    l.hp -= best.head ? 4 : 1.5;
+    spawnPuff(best.point, 0x8a1010, 0.35, 0.5);
+    if (!G.heat) { G.wanted += 10; reportCrime('law', l.x, l.z); }
+    if (l.hp <= 0) {
+      l.alive = false; l.fall = 0; l.deadT = 0;
+      G.wanted += 25; showHitmark(true, sx, sy);
+      toast('Você matou um homem da lei', `Recompensa pela sua cabeça: ${fmtMoney(G.wanted)}.`);
+      reportCrime('law', l.x, l.z);
+    } else showHitmark(false, sx, sy);
   } else if (best.kind === 'npc') {
     spawnPuff(best.point, 0x8a1010, 0.35, 0.5);
     killNPC(best.t); showHitmark(true, sx, sy);
@@ -1939,11 +2137,16 @@ function updateNPCs(dt) {
       n.h.root.rotation.x = -n.fall * Math.PI / 2; n.h.root.position.y = n.y + n.fall * 0.12;
       if (n.deadT > 45 && Math.hypot(n.x - player.x, n.z - player.z) > 60) {
         // um novo morador chega à cidade
-        const p = streetPoint(); n.x = p.x; n.z = p.z; n.alive = true; n.looted = false; n.h.root.rotation.x = 0; n.flee = 0; n.wait = 2;
+        const p = streetPoint(); n.x = p.x; n.z = p.z; n.alive = true; n.looted = false; for (const q of npcs) q.sawBody = false; n.h.root.rotation.x = 0; n.flee = 0; n.wait = 2;
       }
       continue;
     }
     if (G.wanted > 0 && Math.hypot(n.x - player.x, n.z - player.z) < 10) n.flee = Math.max(n.flee || 0, 2);
+    if (!n.sawBody) for (const q of npcs) if (q.alive === false && Math.hypot(q.x - n.x, q.z - n.z) < 7) {
+      n.sawBody = true; n.flee = 6; n.wait = 0;
+      say(n, pick(['Meu Deus, um corpo!', 'Alguém chame o xerife!', 'Mataram o ' + q.name + '!']), 2.5);
+      break;
+    }
     n.talkCd = Math.max(0, n.talkCd - dt);
     if (n.flee > 0) n.flee -= dt;
     if (n.wait > 0) { n.wait -= dt; n.move = lerp(n.move, 0, clamp(dt * 6, 0, 1)); }
@@ -2082,6 +2285,16 @@ function drawMinimap() {
     if (d > max) { bx *= max / d; bz *= max / d; }
     mctx.fillStyle = '#d9b35c'; mctx.beginPath(); mctx.arc(bx, bz, 5, 0, 7); mctx.fill();
   }
+  const qt = questTarget();
+  if (qt) {
+    let qx = wx(qt.x), qz = wz(qt.z); const d = Math.hypot(qx, qz), max = c - 10;
+    if (d > max) { qx *= max / d; qz *= max / d; }
+    mctx.save(); mctx.translate(qx, qz); mctx.rotate(Math.PI / 4 - look.yaw);
+    mctx.fillStyle = '#f0c040'; mctx.strokeStyle = '#3a2616'; mctx.lineWidth = 1.5;
+    mctx.fillRect(-4.5, -4.5, 9, 9); mctx.strokeRect(-4.5, -4.5, 9, 9); mctx.restore();
+  }
+  mctx.fillStyle = '#4a8aff';
+  for (const l of lawmen) if (l.alive) { mctx.beginPath(); mctx.arc(wx(l.x), wz(l.z), 2.8, 0, 7); mctx.fill(); }
   mctx.fillStyle = '#e02020';
   for (const b of bandits) if (b.alive && b.alert) { mctx.beginPath(); mctx.arc(wx(b.x), wz(b.z), 2.5, 0, 7); mctx.fill(); }
   mctx.fillStyle = '#c21d1d';
@@ -2126,10 +2339,13 @@ function frame() {
     }
     if (pressed.KeyM) toggleMute();
     if (pressed.KeyB) cycleBright();
+    if (pressed.KeyJ && !G.menu) openJournal();
     const aiming = updatePlayer(dt);
     updateHorse(dt);
     updateNPCs(dt);
     updateBandits(dt);
+    updateLaw(dt);
+    updateQuest();
     updateWorld(dt);
     updateEffects(dt);
     updateCamera(dt, aiming);
@@ -2140,6 +2356,7 @@ function frame() {
     updateBubbles(dt);
     updateHUD();
     drawMinimap();
+    drawMarker();
     saveT += dt; if (saveT > 15) { saveT = 0; saveGame(); }
   } else {
     updateHorse(dt); updateNPCs(dt); updateWorld(dt); updateEffects(dt); updateCamera(dt, false);
@@ -2164,13 +2381,18 @@ const SAVE_KEY = 'pv3d-save-v1';
 function saveGame() {
   if (G.state !== 'play') return;
   const A = anchor();
-  store.set(SAVE_KEY, JSON.stringify({ v: 1, time: G.time, day: G.day, money: G.money, ammo: G.ammo, reserve: G.reserve, hat: G.hatColor, coat: G.coatColor, beard: G.beard, muted: G.muted, gotLetter: G.gotLetter, wanted: G.wanted, valuables: G.valuables, x: A.x, z: A.z }));
+  store.set(SAVE_KEY, JSON.stringify({ v: 1, time: G.time, day: G.day, money: G.money, ammo: G.ammo, reserve: G.reserve, hat: G.hatColor, coat: G.coatColor, beard: G.beard, muted: G.muted, gotLetter: G.gotLetter, wanted: G.wanted, valuables: G.valuables, stats: G.stats, quest: G.quest, x: A.x, z: A.z }));
 }
 function loadGame() {
   let d = null;
   try { d = JSON.parse(store.get(SAVE_KEY)); } catch (e) { d = null; }
   if (!d || d.v !== 1) return false;
   Object.assign(G, { time: d.time, day: d.day, money: d.money, ammo: d.ammo, reserve: d.reserve, muted: !!d.muted, gotLetter: !!d.gotLetter, beard: d.beard !== false, wanted: d.wanted || 0, valuables: d.valuables || {} });
+  if (d.stats) Object.assign(G.stats, d.stats, { gangStarted: d.stats.gangDone ? true : false, gangKilled: !!d.stats.gangDone });
+  if (d.quest) G.quest = d.quest;
+  // caçadas em andamento não são salvas: volta ao começo da missão correspondente
+  if (G.quest.i === 4 && G.stats.bounties <= G.quest.base.bounties) G.quest.step = 0;
+  if (G.quest.i === 5 && !G.stats.gangDone) G.quest.step = 0;
   setPlayerHat(d.hat || G.hatColor); setPlayerCoat(d.coat || G.coatColor); player.h.beard.visible = G.beard;
   if (!isBlocked(d.x, d.z, 0.4)) { player.x = d.x; player.z = d.z; }
   return true;
@@ -2212,7 +2434,7 @@ function startGame() {
   banner('VALE ESPERANÇA', loaded ? `Dia ${G.day} · bem-vindo de volta` : 'Novo Hanover · 1899');
   if (!loaded) {
     setTimeout(() => toast('Bem-vindo, forasteiro', IS_TOUCH ? 'Arraste à esquerda para andar e à direita para olhar em volta.' : 'Use WASD para andar. Clique na tela para controlar a câmera com o mouse.'), 1400);
-    setTimeout(() => toast('Seu cavalo', `${horse.name} está amarrado em frente ao saloon. Chegue perto para montar.`), 6000);
+    setTimeout(() => toast('Missão: ' + MISSIONS[0].title, 'Siga o losango dourado. O objetivo fica no topo da tela e no diário 📜.', 'gold'), 6000);
     setTimeout(() => toast('Dica', 'Durma no hotel ou espere o pôr do sol: o céu muda com as horas.'), 11500);
   }
 }
@@ -2271,4 +2493,4 @@ requestAnimationFrame(frame);
 buildReady();
 
 // Exposto para testes automatizados
-window.__pv3d = { G, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer, lootBody, lootable };
+window.__pv3d = { G, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer, lootBody, lootable, lawmen, reportCrime, MISSIONS, updateQuest };

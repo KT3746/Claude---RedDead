@@ -242,3 +242,23 @@ body.touch .key-controls { display: none; }
 
 #brightBtn { top: calc(104px + env(safe-area-inset-top)); right: calc(58px + env(safe-area-inset-right)); color: #f4d27a; font-size: 18px; }
 .quality.bright { margin-top: 8px; }
+
+/* ---------- Missões e lei ---------- */
+#objective small { display: block; font-size: 13px; color: var(--ink-dim); margin-top: 2px; }
+#journalBtn { top: calc(104px + env(safe-area-inset-top)); right: calc(100px + env(safe-area-inset-right)); font-size: 17px; }
+#wanted {
+  position: absolute; top: calc(70px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  padding: 4px 16px; text-align: center; font-family: 'Rye', Georgia, serif; font-size: 15px; letter-spacing: 1px;
+  background: rgba(20,8,6,0.75); border: 1px solid rgba(241,230,207,0.3); color: var(--ink);
+}
+#wanted small { display: block; font-family: 'Crimson Text', Georgia, serif; font-size: 12px; color: var(--ink-dim); letter-spacing: 0; }
+#wanted.hot { border-color: #c0281e; color: #ff8a70; animation: wantedpulse 1s infinite; }
+@keyframes wantedpulse { 50% { box-shadow: 0 0 18px rgba(192,40,30,0.7); } }
+#marker { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none; }
+#marker .gem { width: 14px; height: 14px; transform: rotate(45deg); background: #f0c040; border: 2px solid #3a2616; box-shadow: 0 0 8px rgba(240,192,64,0.8); }
+#marker .d { font-size: 13px; font-weight: 700; color: #fff4d0; text-shadow: 0 1px 3px #000, 0 0 2px #000; }
+@media (orientation: landscape) and (max-height: 500px) { #wanted { top: calc(58px + env(safe-area-inset-top)); } }
+@media (prefers-reduced-motion: reduce) { #wanted.hot { animation: none; } }
+@media (orientation: landscape) and (max-height: 500px) {
+  #wanted { top: auto; bottom: calc(158px + env(safe-area-inset-bottom)); }
+}
