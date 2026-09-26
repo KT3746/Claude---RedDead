@@ -1247,7 +1247,7 @@ function buildingMenu(b) {
         if (!G.bounty && !G.stats.gangStarted && G.quest.i >= 5) opts.push({ label: 'Perguntar sobre Dutch Callahan', desc: 'O bandido mais procurado de Novo Hanover. $100.', fn: () => { G.stats.gangStarted = true; toast('Xerife Malloy', '"Callahan e mais quatro estão escondidos a oeste. Leve bastante munição."'); startBounty({ gang: true }); return false; } });
         if (G.bounty && G.bounty.stage === 'return') opts.push({ label: `Entregar ${G.bounty.name}`, desc: 'Receber a recompensa.', fn: () => { const r = G.bounty.reward; earn(r); banner('RECOMPENSA RECEBIDA', `+${fmtMoney(r)}`); G.stats.bounties++; if (G.bounty.gang) G.stats.gangDone = true; G.bounty = null; clearCamp(); return false; } });
         if (!G.bounty && G.heat === 0) opts.push({ label: 'Aceitar caçada de recompensa', desc: 'Bandidos armados num esconderijo fora da cidade. Eles atiram de volta!', fn: () => { startBounty(); return false; } });
-        else if (G.bounty && G.bounty.stage === 'hunt') opts.push({ label: 'Desistir da caçada', fn: () => { G.bounty = null; clearCamp(); toast('Caçada cancelada', 'O xerife balança a cabeça.'); return false; } });
+        else if (G.bounty && G.bounty.stage === 'hunt') opts.push({ label: 'Desistir da caçada', fn: () => { if (G.bounty.gang) { G.stats.gangStarted = false; if (G.quest.i === 5) G.quest.step = 0; } G.bounty = null; clearCamp(); toast('Caçada cancelada', 'O xerife balança a cabeça.'); return false; } });
         opts.push({ label: 'Conversar com o xerife', fn: () => { toast('Xerife Malloy', pick(['"Garrafas lá atrás, se quiser treinar a mira."', '"Mire no peito. Na cabeça, se tiver coragem."', '"Ande a cavalo e em zigue-zague: fica difícil te acertar."', '"Atirou num inocente? Vai pagar por isso."'])); return false; } });
         opts.push(close);
         openMenu('Gabinete do Xerife', G.wanted > 0 ? 'O xerife te olha de cara feia.' : 'Cartazes de procurados cobrem a parede.', opts);
@@ -1322,6 +1322,7 @@ window.addEventListener('keydown', (e) => {
   if (!keys[e.code]) pressed[e.code] = true;
   keys[e.code] = true;
   if (G.menu) {
+    if (e.repeat) return;
     const m = G.menu;
     const move = (d) => { let i = m.sel; for (let k = 0; k < m.options.length; k++) { i = (i + d + m.options.length) % m.options.length; if (!m.options[i].disabled) break; } m.sel = i; sfx('click'); renderMenu(); };
     if (e.code === 'ArrowUp' || e.code === 'KeyW') move(-1);
@@ -2003,7 +2004,7 @@ function shoot() {
   for (const b of bandits) if (b.alive) { const h = rayHitHuman(raycaster.ray, b, best.d); if (h) best = { d: h.along, kind: 'bandit', t: b, head: h.head }; }
   for (const l of lawmen) if (l.alive) { const h = rayHitHuman(raycaster.ray, l, best.d); if (h) best = { d: h.along, kind: 'law', t: l, head: h.head }; }
   for (const n of npcs) if (n.alive) { const h = rayHitHuman(raycaster.ray, n, best.d); if (h) best = { d: h.along, kind: 'npc', t: n, head: h.head }; }
-  if (!best.point || best.kind === 'bandit' || best.kind === 'npc') best.point = from.clone().addScaledVector(dir, best.d);
+  if (!best.point || best.kind === 'bandit' || best.kind === 'law' || best.kind === 'npc') best.point = from.clone().addScaledVector(dir, best.d);
 
   spawnTracer(hand, best.point);
   const scr = best.point.clone().project(camera);
@@ -2019,7 +2020,7 @@ function shoot() {
     const l = best.t;
     l.hp -= best.head ? 4 : 1.5;
     spawnPuff(best.point, 0x8a1010, 0.35, 0.5);
-    if (!G.heat) { G.wanted += 10; reportCrime('law', l.x, l.z); }
+    if (!G.heat && l.hp > 0) { G.wanted += 10; reportCrime('law', l.x, l.z); }
     if (l.hp <= 0) {
       l.alive = false; l.fall = 0; l.deadT = 0;
       G.wanted += 25; showHitmark(true, sx, sy);
