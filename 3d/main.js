@@ -1135,14 +1135,14 @@ function updateHUD() {
   if (!mis && !G.bounty) obj = '<b>LIVRE</b>Aceite caçadas com o Xerife ou explore o deserto.';
   let wanted = '';
   if (G.heat > 0) wanted = `PROCURADO ${'★'.repeat(G.heat)}${'☆'.repeat(3 - G.heat)} · ${fmtMoney(G.wanted)}<small>Fuja para longe da lei ou renda-se no Xerife</small>`;
-  else if (G.wanted > 0) wanted = `Recompensa pela sua cabeça: ${fmtMoney(G.wanted)}<small>Pague no Xerife</small>`;
+  else if (G.wanted > 0) wanted = `💰 ${fmtMoney(G.wanted)} pela sua cabeça<small>Pague no Xerife para limpar seu nome</small>`;
   const key = clock + G.money.toFixed(2) + ammo + hp + obj + wanted;
   if (key === lastHud) return;
   lastHud = key;
   $('hpFill').style.width = hp + '%';
   $('health').classList.toggle('low', hp < 35);
   $('objective').innerHTML = obj;
-  $('wanted').innerHTML = wanted; $('wanted').hidden = !wanted; $('wanted').classList.toggle('hot', G.heat > 0);
+  $('wanted').innerHTML = wanted; $('wanted').hidden = !wanted; $('wanted').classList.toggle('hot', G.heat > 0); $('wanted').classList.toggle('calm', G.heat === 0);
   $('clock').textContent = clock; $('money').textContent = fmtMoney(G.money);
   $('ammo').textContent = '🔫 ' + ammo; $('ammo').classList.toggle('low', G.ammo === 0);
 }
@@ -1813,7 +1813,7 @@ function reportCrime(kind, x, z) {
   G.heat = Math.min(3, (G.heat || 0) + 1);
   G.escapeT = 0;
   lawSpawnT = Math.min(lawSpawnT, first ? 3 : 1);
-  if (first) banner('PROCURADO', 'Testemunhas chamaram a lei!');
+  if (first) banner('PROCURADO', 'Fuja para longe ou renda-se no Xerife');
   else toast('A situação piorou', `Procurado ${'★'.repeat(G.heat)} — mais homens da lei a caminho.`);
 }
 function clearLaw() {
