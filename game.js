@@ -742,7 +742,7 @@ function buildingMenu(b) {
       if (G.bounty && G.bounty.stage === 'return') {
         opts.push({ label: `Entregar ${G.bounty.name}`, desc: 'Receber a recompensa.', fn: () => {
           const rw = G.bounty.reward; earn(rw); changeHonor(4, 'Você trouxe justiça.');
-          banner('RECOMPENSA RECEBIDA', `+${fmtMoney(rw)}`); G.bounty = null; return false;
+          banner('RECOMPENSA RECEBIDA', `+${fmtMoney(rw)}`); cancelBounty(); return false;
         } });
       }
       if (!G.bounty) {
@@ -775,8 +775,8 @@ function buildingMenu(b) {
     case 'post':
       openMenu('Correio', 'Cartas e telegramas.', [
         { label: 'Verificar correspondência', fn: () => {
-          toast('Carta', pick(['"Querido filho, a fazenda vai bem. Volte logo. — Mãe"', 'Nenhuma carta hoje.', '"Devo-lhe $5. Aqui está. — Lenny"']));
-          if (!G.gotLetter && Math.random() < 0.5) { G.gotLetter = true; earn(5); }
+          if (!G.gotLetter && Math.random() < 0.5) { G.gotLetter = true; earn(5); toast('Carta', '"Devo-lhe $5. Aqui está. — Lenny"', 'gold'); }
+          else toast('Carta', pick(['"Querido filho, a fazenda vai bem. Volte logo. — Mãe"', 'Nenhuma carta hoje.']));
           return false;
         } },
         G.job
@@ -886,6 +886,7 @@ window.addEventListener('keydown', (e) => {
   if (!keys[e.code]) pressed[e.code] = true;
   keys[e.code] = true;
   if (G.menu) {
+    if (e.repeat) return;
     const m = G.menu;
     const move = (d) => {
       let i = m.sel;
@@ -1609,7 +1610,7 @@ function updateBullets(dt) {
           }
         }
         // entidades
-        for (const e of entsForHit()) {
+        if (!dead) for (const e of entsForHit()) {
           if (Math.abs(b.x - e.x) < 9 && b.y > e.y - 36 && b.y < e.y) {
             dead = true;
             if (e.kind === 'outlaw') {
@@ -1633,7 +1634,7 @@ function updateBullets(dt) {
           const sp = ANIMAL[a.type];
           if (Math.abs(b.x - a.x) < sp.hw && b.y > a.y - sp.hh && b.y < a.y + 3) { dead = true; hitAnimal(a, b.dmg); break; }
         }
-        if (dog && Math.abs(b.x - dog.x) < 8 && b.y > dog.y - 16 && b.y < dog.y) {
+        if (!dead && dog && Math.abs(b.x - dog.x) < 8 && b.y > dog.y - 16 && b.y < dog.y) {
           dead = true; toast('Ei!', 'O cachorro fugiu assustado. (A bala raspou nele.)'); dog.x += 60 * Math.sign(b.vx); changeHonor(-3, 'Atirou em um cachorro.');
         }
       } else if (b.from === 'enemy') {
@@ -2893,7 +2894,8 @@ function eventInteractions(consider, px, py) {
         v.hurt = false; v.wait = 2;
         endEvent();
       } },
-      f: { label: 'Roubar', fn: () => {
+      f: ev.robbed ? null : { label: 'Roubar', fn: () => {
+        ev.robbed = true;
         say(v, 'Não... por favor...', 3);
         earn(2.5); changeHonor(-10, 'Você roubou um homem ferido.');
       } },
