@@ -43,6 +43,8 @@ Ideias ainda não feitas no 3D (existem no 2D): caça de animais, eventos na cid
   consulte `https://api.github.com/repos/KT3746/Claude---RedDead/actions/runs?per_page=1` até o commit
   aparecer como `completed success`.
 - Não crie pull request a menos que o usuário peça.
+- O Safari do iPhone guarda versões antigas: a cada mudança em `main.js`/`style.css`/`game.js`, aumente o número
+  `?v=N` nos links do `index.html` correspondente (3D e/ou 2D) para forçar o download da versão nova.
 - Testes no navegador: o ambiente não acessa a CDN nem o github.io. Para testar o 3D, sirva o repositório com
   `python3 -m http.server` e, no Playwright (Chromium em `/opt/pw-browsers`, flags
   `--use-angle=swiftshader --enable-unsafe-swiftshader`), redirecione

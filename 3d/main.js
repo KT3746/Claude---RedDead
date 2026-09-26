@@ -1122,6 +1122,7 @@ function earn(v) { G.money += v; sfx('coin'); }
 function advanceTime(h) { G.time += h; while (G.time >= 24) { G.time -= 24; G.day++; } }
 
 let lastHud = '';
+let calmKey = '', calmUntil = 0;
 function updateHUD() {
   const h = Math.floor(G.time) % 24, m = Math.floor((G.time % 1) * 60);
   const clock = `Dia ${G.day} · ${String(h).padStart(2, '0')}:${String(m - (m % 5)).padStart(2, '0')}`;
@@ -1135,7 +1136,11 @@ function updateHUD() {
   if (!mis && !G.bounty) obj = '<b>LIVRE</b>Aceite caçadas com o Xerife ou explore o deserto.';
   let wanted = '';
   if (G.heat > 0) wanted = `PROCURADO ${'★'.repeat(G.heat)}${'☆'.repeat(3 - G.heat)} · ${fmtMoney(G.wanted)}<small>Fuja para longe da lei ou renda-se no Xerife</small>`;
-  else if (G.wanted > 0) wanted = `💰 ${fmtMoney(G.wanted)} pela sua cabeça<small>Pague no Xerife para limpar seu nome</small>`;
+  else if (G.wanted > 0) {
+    // depois de despistar a lei, o aviso aparece só por alguns segundos (o valor fica no diário 📜)
+    if (calmKey !== fmtMoney(G.wanted)) { calmKey = fmtMoney(G.wanted); calmUntil = performance.now() + 6000; }
+    if (performance.now() < calmUntil) wanted = `💰 ${fmtMoney(G.wanted)} pela sua cabeça<small>Pague no Xerife para limpar seu nome</small>`;
+  }
   const key = clock + G.money.toFixed(2) + ammo + hp + obj + wanted;
   if (key === lastHud) return;
   lastHud = key;
@@ -1508,7 +1513,7 @@ function openJournal() {
     return { label: '· ' + (i === G.quest.i + 1 ? m.title : '???'), desc: 'Ainda não disponível', disabled: true, fn: () => false };
   });
   opts.push({ label: 'Fechar', fn: () => false });
-  openMenu('Diário', `Missões concluídas: ${Math.min(G.quest.i, MISSIONS.length)}/${MISSIONS.length} · Caçadas: ${G.stats.bounties}`, opts);
+  openMenu('Diário', `Missões concluídas: ${Math.min(G.quest.i, MISSIONS.length)}/${MISSIONS.length} · Caçadas: ${G.stats.bounties}` + (G.wanted > 0 ? ` · <b style="color:#ff8a70">Recompensa pela sua cabeça: ${fmtMoney(G.wanted)}</b> (pague no Xerife)` : ''), opts);
 }
 
 // Saque de corpos (bandidos e moradores)
