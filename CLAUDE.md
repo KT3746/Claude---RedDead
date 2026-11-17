@@ -36,8 +36,10 @@ venda de objetos no armazém; reação da lei a crimes (★ a ★★★, homens 
 7 missões (6 de história até o bando de Dutch Callahan + "Caçador do deserto"), com marcador dourado e diário (📜 / J);
 caça: coelhos, cervos e coiotes (seção "Caça" em `main.js`, `ANIMALS`), esfolar, peles vendidas no Armazém
 (tiro na cabeça = pele perfeita, vale o dobro), coiotes atacam à noite fora da cidade.
+Clima (`WX`, `updateWeather`): céu limpo, nublado ou chuva com gotas em volta da câmera, névoa cinza, som
+de chuva e trovões com relâmpago.
 
-Ideias ainda não feitas no 3D (existem no 2D): eventos na cidade, trem, clima, fazendas.
+Ideias ainda não feitas no 3D (existem no 2D): eventos na cidade, trem, fazendas.
 
 ## Como trabalhar neste projeto
 

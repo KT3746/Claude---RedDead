@@ -738,7 +738,14 @@ function updateSky() {
   windowMat.emissiveIntensity = lerp(0, 1.4, 1 - smoothstep(-2, 10, elev));
   lanternMat.emissiveIntensity = lerp(0, 2.5, 1 - smoothstep(-2, 8, elev));
   for (const l of lamps) l.glow.material.opacity = (1 - smoothstep(-2, 8, elev)) * 0.85;
-  dust.material.opacity = 0.05 + golden * 0.35;
+  dust.material.opacity = (0.05 + golden * 0.35) * (1 - WX.rain);
+  // nuvens e chuva escurecem o sol, acinzentam a névoa e fecham a visão; o relâmpago clareia tudo
+  const cl = WX.cloud;
+  sun.intensity *= 1 - 0.7 * cl;
+  hemi.intensity *= 1 - 0.2 * cl;
+  scene.fog.color.lerp(tmpC.set('#7d838c'), cl * 0.55 * day);
+  scene.fog.density += 0.005 * WX.rain;
+  if (WX.flash > 0) { ambient.intensity += WX.flash * 2.5; hemi.intensity += WX.flash * 1.5; }
 }
 let lampSortT = 0;
 function updateLampLights(dt) {
@@ -1087,6 +1094,12 @@ function sfx(kind, vol = 1) {
   else if (kind === 'reload') { tone(300, 0.05, 'square', 0.07); tone(420, 0.05, 'square', 0.07, 0.3); tone(520, 0.05, 'square', 0.07, 0.6); }
   else if (kind === 'clop') { tone(180 + Math.random() * 40, 0.05, 'triangle', 0.06 * vol, 0, 90); }
   else if (kind === 'step') { tone(110 + Math.random() * 30, 0.04, 'sine', 0.035 * vol, 0, 60); }
+  else if (kind === 'thunder') {
+    const src = AC.createBufferSource(); src.buffer = noiseBuf(3);
+    const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 200;
+    const g = AC.createGain(); g.gain.setValueAtTime(0.001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.15); g.gain.exponentialRampToValueAtTime(0.001, t + 2.8);
+    src.connect(f).connect(g).connect(MASTER); src.start(t);
+  }
   else if (kind === 'bell') { tone(523, 1.6, 'sine', 0.15); tone(1046, 1.2, 'sine', 0.05); }
   else if (kind === 'dice') { for (let i = 0; i < 6; i++) tone(1200 + Math.random() * 800, 0.03, 'square', 0.05, i * 0.07); }
   else if (kind === 'piano') {
@@ -2433,6 +2446,69 @@ function updateWorld(dt) {
   G.drunk = Math.max(0, G.drunk - dt * 1.1);
 }
 
+// ---------------------------------------------------------------------
+// Clima: céu limpo, nublado ou chuva com trovões
+// ---------------------------------------------------------------------
+const WX = { kind: 'clear', t: 5, rain: 0, cloud: 0, flash: 0, thunderT: 0 };
+const RAIN_N = Q.npcs > 10 ? 900 : 500, RAIN_BOX = 22;
+const rain = (function () {
+  const pos = new Float32Array(RAIN_N * 6);
+  for (let i = 0; i < RAIN_N; i++) {
+    const x = R(-RAIN_BOX, RAIN_BOX), y = R(0, 24), z = R(-RAIN_BOX, RAIN_BOX);
+    pos.set([x, y, z, x + 0.06, y + 0.7, z + 0.03], i * 6);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xb8c4d4, transparent: true, opacity: 0, depthWrite: false }));
+  m.frustumCulled = false; m.visible = false; m.userData.dynamic = true; scene.add(m);
+  return m;
+})();
+let rainGain = null;
+function updateWeather(dt) {
+  const w = WX;
+  w.t -= dt / 40; // horas de jogo (1 h = 40 s)
+  if (w.t <= 0) {
+    const r = Math.random(), prev = w.kind;
+    w.kind = r < 0.62 ? 'clear' : r < 0.82 ? 'cloudy' : 'rain';
+    w.t = R(2, 5);
+    if (w.kind === 'rain' && prev !== 'rain') toast('O tempo virou', 'Começou a chover. Os trovões assustam até os coiotes.');
+  }
+  w.rain = lerp(w.rain, w.kind === 'rain' ? 1 : 0, clamp(dt * 0.2, 0, 1));
+  w.cloud = lerp(w.cloud, w.kind === 'clear' ? 0 : 1, clamp(dt * 0.15, 0, 1));
+  w.flash = Math.max(0, w.flash - dt * 4);
+  w.thunderT -= dt;
+  if (w.rain > 0.75 && w.thunderT <= 0 && Math.random() < dt * 0.08) {
+    w.flash = 1; w.thunderT = 6;
+    setTimeout(() => sfx('thunder'), 500 + Math.random() * 1800);
+  }
+  // gotas caem numa caixa que acompanha a câmera
+  rain.visible = w.rain > 0.02;
+  if (rain.visible) {
+    rain.material.opacity = w.rain * 0.45;
+    const a = rain.geometry.attributes.position, arr = a.array, c = camera.position;
+    const fall = 22 * dt;
+    for (let i = 0; i < RAIN_N; i++) {
+      const k = i * 6;
+      let x = arr[k], y = arr[k + 1] - fall, z = arr[k + 2];
+      if (y < c.y - 6 || x - c.x > RAIN_BOX || x - c.x < -RAIN_BOX || z - c.z > RAIN_BOX || z - c.z < -RAIN_BOX) {
+        x = c.x + R(-RAIN_BOX, RAIN_BOX); z = c.z + R(-RAIN_BOX, RAIN_BOX); y = c.y + R(6, 18);
+      }
+      arr[k] = x; arr[k + 1] = y; arr[k + 2] = z;
+      arr[k + 3] = x + 0.06; arr[k + 4] = y + 0.7; arr[k + 5] = z + 0.03;
+    }
+    a.needsUpdate = true;
+  }
+  // barulho de chuva: ruído contínuo que só aumenta o volume quando chove
+  if (AC && MASTER) {
+    if (!rainGain) {
+      const src = AC.createBufferSource(); src.buffer = noiseBuf(2); src.loop = true;
+      const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1600;
+      rainGain = AC.createGain(); rainGain.gain.value = 0;
+      src.connect(f).connect(rainGain).connect(MASTER); src.start();
+    }
+    rainGain.gain.value = w.rain * 0.12;
+  }
+}
+
 // Câmera em terceira pessoa com colisão
 const camTarget = new THREE.Vector3(), camWant = new THREE.Vector3(), camDir = new THREE.Vector3();
 let camDist = 4.6;
@@ -2566,6 +2642,7 @@ function frame() {
     updateAnimals(dt);
     updateQuest();
     updateWorld(dt);
+    updateWeather(dt);
     updateEffects(dt);
     updateCamera(dt, aiming);
     updateLock(dt);
@@ -2712,4 +2789,4 @@ requestAnimationFrame(frame);
 buildReady();
 
 // Exposto para testes automatizados
-window.__pv3d = { G, animals, ANIMALS, skinAnimal, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer, lootBody, lootable, lawmen, reportCrime, MISSIONS, updateQuest };
+window.__pv3d = { G, WX, animals, ANIMALS, skinAnimal, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer, lootBody, lootable, lawmen, reportCrime, MISSIONS, updateQuest };
