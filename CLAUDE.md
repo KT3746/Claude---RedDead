@@ -33,9 +33,11 @@ montável; moradores; ciclo dia/noite com céu realista, sombras, lampiões; aju
 mira em anel sempre visível no celular + círculo de trava no alvo; balas acertam pessoas, paredes e chão;
 caçadas de recompensa com bandidos que atiram de volta; vida, morte e respawn no hotel; saque de corpos e
 venda de objetos no armazém; reação da lei a crimes (★ a ★★★, homens da lei, render-se no xerife);
-6 missões de história até o bando de Dutch Callahan, com marcador dourado e diário (📜 / J).
+7 missões (6 de história até o bando de Dutch Callahan + "Caçador do deserto"), com marcador dourado e diário (📜 / J);
+caça: coelhos, cervos e coiotes (seção "Caça" em `main.js`, `ANIMALS`), esfolar, peles vendidas no Armazém
+(tiro na cabeça = pele perfeita, vale o dobro), coiotes atacam à noite fora da cidade.
 
-Ideias ainda não feitas no 3D (existem no 2D): caça de animais, eventos na cidade, trem, clima, fazendas.
+Ideias ainda não feitas no 3D (existem no 2D): eventos na cidade, trem, clima, fazendas.
 
 ## Como trabalhar neste projeto
 

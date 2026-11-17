@@ -933,8 +933,8 @@ function poseHorse(h, phase, speed) {
 const G = {
   state: 'title', time: 14.5, day: 1, money: 12.5, ammo: 6, reserve: 36, reloading: 0,
   drunk: 0, menu: null, fading: false, muted: false, hatColor: '#2c2219', coatColor: '#4a3b2c', beard: true,
-  bottleHits: 0, gotLetter: false, shake: 0, health: 100, lastHit: 99, wanted: 0, bounty: null, lock: null, valuables: {}, heat: 0, escapeT: 0,
-  stats: { sheriff: false, rode: false, drinks: 0, dice: 0, outfit: false, bounties: 0, gangStarted: false, gangKilled: false, gangDone: false },
+  bottleHits: 0, gotLetter: false, shake: 0, health: 100, lastHit: 99, wanted: 0, bounty: null, lock: null, valuables: {}, pelts: {}, heat: 0, escapeT: 0,
+  stats: { sheriff: false, rode: false, drinks: 0, dice: 0, outfit: false, bounties: 0, gangStarted: false, gangKilled: false, gangDone: false, hunted: 0, skinned: 0, peltsSold: 0 },
   quest: { i: 0, step: 0, base: { bottles: 0, bounties: 0 } },
 };
 
@@ -1218,6 +1218,10 @@ function buildingMenu(b) {
       break;
     case 'store': {
       const opts = () => [
+        (() => {
+          const n = peltCount(), v = peltValue();
+          return { label: `Vender peles (${n})`, desc: n ? Object.entries(G.pelts).map(([k, q]) => `${q}× ${k.toLowerCase()}`).join(', ') + ` · ${fmtMoney(v)}` : 'Cace coelhos, cervos e coiotes fora da cidade e esfole os animais.', disabled: n === 0, fn: () => { earn(v); G.stats.peltsSold += n; G.pelts = {}; toast('Peles vendidas', `O dono do armazém pagou ${fmtMoney(v)}.`, 'gold'); return { options: opts() }; } };
+        })(),
         { label: 'Munição de revólver (12)', desc: `Você tem ${G.reserve} de reserva.`, price: 1, fn: () => { G.reserve += 12; toast('Comprado', 'Munição +12'); return { options: opts() }; } },
         (() => {
           const n = Object.values(G.valuables).reduce((a, b) => a + b, 0);
@@ -1457,10 +1461,20 @@ const MISSIONS = [
     { text: () => { const [d, t] = gangCount(); return `Elimine o bando de Callahan (${d}/${t})`; }, target: () => (G.bounty && G.bounty.gang && G.bounty.stage === 'hunt' ? { x: G.bounty.x, z: G.bounty.z } : null), done: () => G.stats.gangKilled },
     { text: () => 'Volte ao Xerife para receber $100', target: () => doorOf('sheriff'), done: () => G.stats.gangDone },
   ] },
+  { title: 'Caçador do deserto', reward: 8, intro: 'Peles valem bom dinheiro no Armazém.', steps: [
+    { text: () => `Cace e esfole 3 animais fora da cidade (${clamp(G.stats.skinned - (G.quest.base.skinned || 0), 0, 3)}/3)`, target: () => nearestPrey(), done: () => G.stats.skinned - (G.quest.base.skinned || 0) >= 3 },
+    { text: () => 'Venda as peles no Armazém', target: () => doorOf('store'), done: () => G.stats.peltsSold > (G.quest.base.peltsSold || 0) },
+  ] },
 ];
+// animal abatido mais perto (para o losango da missão de caça)
+function nearestPrey() {
+  let best = null, bd = 1e9;
+  for (const a of animals) if (!a.alive && !a.skinned) { const d = Math.hypot(a.x - player.x, a.z - player.z); if (d < bd) { bd = d; best = a; } }
+  return best;
+}
 function curMission() { return MISSIONS[G.quest.i]; }
 function curStep() { const m = curMission(); return m ? m.steps[G.quest.step] : null; }
-function missionBase() { return { bottles: G.bottleHits, bounties: G.stats.bounties }; }
+function missionBase() { return { bottles: G.bottleHits, bounties: G.stats.bounties, skinned: G.stats.skinned, peltsSold: G.stats.peltsSold }; }
 function updateQuest() {
   const m = curMission(), st = curStep();
   if (!m || !st || G.fading || G.menu) return;
@@ -1544,7 +1558,8 @@ function lootBody(e) {
 function getInteraction() {
   if (player.mounted) {
     const near = lootable().some((e) => Math.hypot(horse.x - e.x, horse.z - e.z) < 4);
-    return { e: { label: near ? 'Desmontar (para revistar o corpo)' : 'Desmontar', fn: dismount } };
+    const prey = animals.some((a) => !a.alive && !a.skinned && Math.hypot(horse.x - a.x, horse.z - a.z) < 4);
+    return { e: { label: near ? 'Desmontar (para revistar o corpo)' : prey ? 'Desmontar (para esfolar)' : 'Desmontar', fn: dismount } };
   }
   let best = null, bd = 1e9;
   const consider = (d, max, info) => { if (d < max && d < bd) { bd = d; best = info; } };
@@ -1557,6 +1572,7 @@ function getInteraction() {
     const cx = e.x - Math.sin(e.heading) * 0.8, cz = e.z - Math.cos(e.heading) * 0.8;
     consider(Math.min(Math.hypot(player.x - cx, player.z - cz), Math.hypot(player.x - e.x, player.z - e.z)) - 0.3, 2.6, { e: { label: 'Revistar o corpo', fn: () => lootBody(e) } });
   }
+  for (const a of animals) if (!a.alive && !a.skinned) consider(Math.hypot(player.x - a.x, player.z - a.z) - 0.4, 2.4, { e: { label: `Esfolar ${ANIMALS[a.type].name}`, fn: () => skinAnimal(a) } });
   for (const it of interactables) consider(Math.hypot(player.x - it.x, player.z - it.z) + 0.3, it.r, { e: { label: it.label, fn: it.fn } });
   return best;
 }
@@ -1908,8 +1924,195 @@ function killNPC(n) {
   reportCrime('murder', n.x, n.z);
 }
 
+// ---------------------------------------------------------------------
+// Caça: coelhos, cervos e coiotes no deserto
+// ---------------------------------------------------------------------
+// medidas em metros; o modelo olha para +Z (mesma convenção das pessoas)
+const ANIMALS = {
+  rabbit: { name: 'coelho', pelt: 'Pele de coelho', price: 0.75, hp: 1, speed: 7, scare: 14, count: 10,
+    color: '#8a7560', belly: '#d8ccb8', bw: 0.13, bh: 0.12, bl: 0.2, bodyY: 0.2, legH: 0.12, headY: 0.3, headF: 0.2, hr: 0.09, r: 0.25 },
+  deer: { name: 'cervo', pelt: 'Pele de cervo', price: 2.5, hp: 2.5, speed: 9, scare: 28, count: 7,
+    color: '#9a6a42', belly: '#e0cfb0', bw: 0.3, bh: 0.32, bl: 0.75, bodyY: 1.0, legH: 0.78, headY: 1.5, headF: 0.85, hr: 0.16, r: 0.45 },
+  coyote: { name: 'coiote', pelt: 'Pele de coiote', price: 1.5, hp: 2, speed: 6.6, scare: 0, count: 4,
+    color: '#9a8a70', belly: '#d8ccb0', bw: 0.2, bh: 0.2, bl: 0.48, bodyY: 0.55, legH: 0.42, headY: 0.7, headF: 0.55, hr: 0.13, r: 0.35 },
+};
+const PERFECT = 'perfeita'; // pele sem furo de bala no corpo (tiro na cabeça) vale o dobro
+function peltPrice(name) {
+  for (const sp of Object.values(ANIMALS)) {
+    if (name === sp.pelt) return sp.price;
+    if (name === `${sp.pelt} ${PERFECT}`) return sp.price * 2;
+  }
+  return 0;
+}
+const peltCount = () => Object.values(G.pelts).reduce((a, b) => a + b, 0);
+const peltValue = () => Object.entries(G.pelts).reduce((a, [k, q]) => a + peltPrice(k) * q, 0);
+
+function makeAnimalMesh(type) {
+  const sp = ANIMALS[type], root = new THREE.Group(), coat = M(sp.color), belly = M(sp.belly), dark = M('#2a1d14');
+  const sphere = geo('aSphere', () => new THREE.SphereGeometry(1, 12, 9));
+  const add = (g, m, x, y, z, sx, sy, sz, parent = root) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.scale.set(sx, sy, sz); parent.add(o); return o; };
+  const body = add(sphere, coat, 0, sp.bodyY, 0, sp.bw, sp.bh, sp.bl); body.castShadow = true;
+  add(sphere, belly, 0, sp.bodyY - sp.bh * 0.35, 0, sp.bw * 0.8, sp.bh * 0.6, sp.bl * 0.8);
+  // cabeça (num pivô no pescoço, para abaixar ao pastar)
+  const neck = new THREE.Group(); neck.position.set(0, sp.bodyY + sp.bh * 0.4, sp.bl * 0.7); root.add(neck);
+  const hx = 0, hy = sp.headY - neck.position.y, hz = sp.headF - neck.position.z;
+  if (type === 'deer') add(geo('aNeck', () => new THREE.CylinderGeometry(0.08, 0.12, 0.6, 7).translate(0, 0.3, 0)), coat, 0, 0, 0, 1, 1, 1, neck).rotation.x = 0.45;
+  add(sphere, coat, hx, hy, hz, sp.hr, sp.hr, sp.hr * 1.3, neck);
+  add(sphere, type === 'rabbit' ? coat : dark, hx, hy - sp.hr * 0.25, hz + sp.hr * 1.1, sp.hr * 0.45, sp.hr * 0.4, sp.hr * 0.7, neck);
+  const ear = geo('aEar', () => new THREE.ConeGeometry(1, 1, 5).translate(0, 0.5, 0));
+  const earH = type === 'rabbit' ? 0.16 : sp.hr * 1.1;
+  for (const s of [-1, 1]) {
+    const e = add(ear, coat, hx + s * sp.hr * 0.5, hy + sp.hr * 0.6, hz - sp.hr * 0.2, sp.hr * 0.28, earH, sp.hr * 0.15, neck);
+    e.rotation.z = -s * 0.25;
+  }
+  if (type === 'deer' && Math.random() < 0.5) { // macho com galhada
+    const tine = geo('aTine', () => new THREE.CylinderGeometry(0.012, 0.02, 1, 4).translate(0, 0.5, 0));
+    for (const s of [-1, 1]) {
+      const a = add(tine, M('#d8c8a8'), hx + s * 0.07, hy + 0.12, hz - 0.04, 1, 0.42, 1, neck); a.rotation.set(-0.35, 0, -s * 0.45);
+      const b = add(tine, M('#d8c8a8'), hx + s * 0.16, hy + 0.3, hz + 0.02, 1, 0.2, 1, neck); b.rotation.set(0.4, 0, -s * 0.2);
+    }
+  }
+  // rabo
+  if (type === 'rabbit') add(sphere, M('#f2ece0'), 0, sp.bodyY + 0.02, -sp.bl, 0.06, 0.06, 0.06);
+  else { const t = add(geo('aTail', () => new THREE.ConeGeometry(1, 1, 6).translate(0, -0.5, 0)), type === 'deer' ? M('#f2ece0') : coat, 0, sp.bodyY + sp.bh * 0.3, -sp.bl * 0.95, 0.06, type === 'deer' ? 0.18 : 0.35, 0.06); t.rotation.x = type === 'deer' ? -0.6 : -0.9; }
+  // pernas
+  const legs = [];
+  const legG = geo('aLeg', () => new THREE.CylinderGeometry(0.5, 0.4, 1, 6).translate(0, -0.5, 0));
+  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    const pivot = new THREE.Group(); pivot.position.set(sx * sp.bw * 0.55, sp.bodyY - sp.bh * 0.3, sz * sp.bl * 0.6); root.add(pivot);
+    add(legG, type === 'deer' ? dark : coat, 0, 0, 0, sp.bw * 0.28, sp.bodyY - sp.bh * 0.3, sp.bw * 0.28, pivot);
+    legs.push(pivot);
+  }
+  root.userData.dynamic = true;
+  scene.add(root);
+  return { root, legs, neck };
+}
+
+const animals = [];
+function wildSpot(minFromPlayer) {
+  for (let k = 0; k < 60; k++) {
+    const x = (Math.random() * 2 - 1) * (WORLD - 30), z = (Math.random() * 2 - 1) * (WORLD - 30);
+    if (!farFromTown(x, z, 25) || isBlocked(x, z, 1)) continue;
+    if (minFromPlayer && Math.hypot(x - anchor().x, z - anchor().z) < minFromPlayer) continue;
+    return { x, z };
+  }
+  return { x: 300, z: 300 };
+}
+function spawnAnimal(type, a, minFromPlayer = 0) {
+  const p = wildSpot(minFromPlayer);
+  if (!a) { a = { kind: 'animal', type, mesh: makeAnimalMesh(type) }; animals.push(a); }
+  Object.assign(a, { x: p.x, z: p.z, y: height(p.x, p.z), heading: Math.random() * 6.28, phase: 0, move: 0, alive: true, hp: ANIMALS[type].hp,
+    tx: p.x, tz: p.z, wait: Math.random() * 4, stuck: 0, flee: 0, hunting: false, biteT: 0, fall: 0, deadT: 0, skinned: false, perfect: false });
+  a.mesh.root.rotation.set(0, a.heading, 0); a.mesh.root.visible = true;
+  return a;
+}
+for (const [type, sp] of Object.entries(ANIMALS)) for (let i = 0; i < sp.count; i++) spawnAnimal(type);
+
+function scareAnimals(x, z, r) {
+  for (const a of animals) if (a.alive && a.type !== 'coyote' && Math.hypot(a.x - x, a.z - z) < r) { a.flee = 5; a.wait = 0; }
+}
+function updateAnimals(dt) {
+  const A = anchor();
+  const running = player.mounted ? horse.speed > 4 : player.move > 1.2;
+  for (const a of animals) {
+    const sp = ANIMALS[a.type];
+    const d = Math.hypot(a.x - A.x, a.z - A.z);
+    const near = Math.hypot(a.x - camera.position.x, a.z - camera.position.z) < 140;
+    a.mesh.root.visible = near;
+    if (!a.alive) {
+      a.deadT += dt; a.fall = Math.min(1, a.fall + dt * 3);
+      a.mesh.root.rotation.z = a.fall * Math.PI / 2;
+      a.mesh.root.position.y = a.y + a.fall * sp.bw * 0.6;
+      // corpo esfolado ou esquecido some longe do jogador e um animal novo aparece em outro canto
+      if ((a.skinned ? a.deadT > 20 : a.deadT > 240) && d > 150) spawnAnimal(a.type, a, 150);
+      continue;
+    }
+    if (d > 220) continue; // longe demais: fica parado (economiza bateria)
+    a.biteT = Math.max(0, a.biteT - dt);
+    let speed = 0, tx = a.tx, tz = a.tz;
+    if (a.type === 'coyote') {
+      const hungry = nightK > 0.5 || d < 12;
+      a.hunting = hungry && d < 35 && !G.fading && G.state === 'play' && farFromTown(A.x, A.z, 5); // não entram na cidade
+      if (a.hunting) {
+        tx = A.x; tz = A.z; speed = player.mounted ? sp.speed * 1.15 : sp.speed;
+        if (d < (player.mounted ? 2.2 : 1.5)) { speed = 0; if (a.biteT <= 0) { a.biteT = 1.4; hurtPlayer(8); } }
+      }
+    } else {
+      if (d < sp.scare * (running ? 1.6 : 1)) a.flee = Math.max(a.flee, 2.5);
+      if (a.flee > 0) {
+        a.flee -= dt;
+        const ang = Math.atan2(a.x - A.x, a.z - A.z) + Math.sin(performance.now() / 400 + a.phase) * 0.35;
+        tx = a.x + Math.sin(ang) * 10; tz = a.z + Math.cos(ang) * 10; speed = sp.speed;
+      }
+    }
+    if (!speed && !a.hunting) { // pastando e vagando devagar
+      if (a.wait > 0) a.wait -= dt;
+      else if (Math.hypot(a.tx - a.x, a.tz - a.z) < 0.5 || a.stuck > 1.5) {
+        a.tx = a.x + R(-14, 14); a.tz = a.z + R(-14, 14); a.stuck = 0; a.wait = Math.random() * 5;
+        if (!farFromTown(a.tx, a.tz, 20)) { a.tx = a.x; a.tz = a.z; }
+      } else { tx = a.tx; tz = a.tz; speed = sp.speed * 0.18; }
+    }
+    if (speed > 0) {
+      const dx = tx - a.x, dz = tz - a.z, dd = Math.hypot(dx, dz) || 1;
+      const moved = moveCircle(a, (dx / dd) * speed * dt, (dz / dd) * speed * dt, sp.r);
+      a.stuck = moved ? 0 : a.stuck + dt;
+      a.heading += angDiff(a.heading, Math.atan2(dx, dz)) * clamp(dt * 8, 0, 1);
+      // animais assustados não entram na cidade
+      if (!farFromTown(a.x, a.z, 10) && a.flee > 0) a.flee = 0;
+    }
+    a.move = lerp(a.move, speed, clamp(dt * 6, 0, 1));
+    a.phase += dt * (a.type === 'rabbit' ? 14 : 4 + a.move * 1.6);
+    if (!near) continue;
+    a.y = height(a.x, a.z);
+    const hop = a.type === 'rabbit' && a.move > 0.5 ? Math.abs(Math.sin(a.phase)) * 0.18 : 0;
+    a.mesh.root.position.set(a.x, a.y + hop, a.z);
+    a.mesh.root.rotation.set(0, a.heading, 0);
+    const swing = Math.min(1, a.move / sp.speed) * 0.7;
+    a.mesh.legs.forEach((l, i) => { l.rotation.x = Math.sin(a.phase + (i === 0 || i === 3 ? 0 : Math.PI)) * swing; });
+    a.mesh.neck.rotation.x = a.move < 0.3 && a.type !== 'coyote' ? 0.55 + Math.sin(performance.now() / 700 + a.phase) * 0.15 : 0;
+  }
+}
+// Tiro em animal: corpo e cabeça como esferas
+function rayHitAnimal(ray, a, maxD) {
+  const sp = ANIMALS[a.type];
+  const pts = [
+    [a.x, a.y + sp.bodyY, a.z, Math.max(sp.bw, sp.bh) * 1.15, false],
+    [a.x + Math.sin(a.heading) * sp.bl * 0.55, a.y + sp.bodyY, a.z + Math.cos(a.heading) * sp.bl * 0.55, Math.max(sp.bw, sp.bh), false],
+    [a.x - Math.sin(a.heading) * sp.bl * 0.55, a.y + sp.bodyY, a.z - Math.cos(a.heading) * sp.bl * 0.55, Math.max(sp.bw, sp.bh), false],
+    [a.x + Math.sin(a.heading) * sp.headF, a.y + sp.headY, a.z + Math.cos(a.heading) * sp.headF, sp.hr * 1.4, true],
+  ];
+  let best = null;
+  for (const [x, y, z, r, head] of pts) {
+    TMP.set(x, y, z);
+    const along = TMP.clone().sub(ray.origin).dot(ray.direction);
+    if (along < 0.5 || along > maxD) continue;
+    if (ray.distanceSqToPoint(TMP) < r * r && (!best || along < best.along)) best = { along, head };
+  }
+  return best;
+}
+function hitAnimal(a, head) {
+  a.hp -= head ? 99 : 1.5;
+  if (a.hp > 0) { if (a.type !== 'coyote') a.flee = 6; else a.hunting = true; return false; }
+  a.alive = false; a.fall = 0; a.deadT = 0; a.perfect = head; a.hunting = false;
+  G.stats.hunted = (G.stats.hunted || 0) + 1;
+  if (!G.huntTip) { G.huntTip = true; setTimeout(() => toast('Primeira caça', 'Chegue perto do animal e toque em "Esfolar". Venda as peles no Armazém. Tiro na cabeça dá pele perfeita, que vale o dobro.', 'gold'), 900); }
+  return true;
+}
+function skinAnimal(a) {
+  if (a.skinned) return;
+  const sp = ANIMALS[a.type];
+  a.skinned = true; a.deadT = 0; player.lootT = 1.2;
+  const name = a.perfect ? `${sp.pelt} ${PERFECT}` : sp.pelt;
+  G.pelts[name] = (G.pelts[name] || 0) + 1;
+  G.stats.skinned = (G.stats.skinned || 0) + 1;
+  a.mesh.root.visible = false;
+  sfx('pickup');
+  toast('Esfolado', `${name} (${fmtMoney(peltPrice(name))} no Armazém).`, 'gold');
+}
+
 // Mira: acha o alvo mais perto do centro da tela (celular) — nunca moradores
 function targetPoint(t) {
+  if (t.kind === 'animal') return new THREE.Vector3(t.x, t.y + ANIMALS[t.type].bodyY, t.z);
   if (t.kind === 'bottle') return TMP2.copy(t.mesh.position).add(TMP.set(0, 0.15, 0)).clone();
   return new THREE.Vector3(t.x, t.y + 1.25, t.z);
 }
@@ -1925,6 +2128,7 @@ function updateLock(dt) {
   const cands = [];
   for (const b of bandits) if (b.alive) cands.push({ t: b, hostile: true, max: 55 });
   if (G.heat > 0) for (const l of lawmen) if (l.alive) cands.push({ t: l, hostile: true, max: 55 });
+  for (const a of animals) if (a.alive && a.mesh.root.visible) cands.push({ t: a, hostile: a.hunting, max: 45 });
   for (const b of bottles) if (b.alive) { b.kind = 'bottle'; cands.push({ t: b, hostile: false, max: 32 }); }
   const scored = [];
   for (const c of cands) {
@@ -2009,7 +2213,8 @@ function shoot() {
   for (const b of bandits) if (b.alive) { const h = rayHitHuman(raycaster.ray, b, best.d); if (h) best = { d: h.along, kind: 'bandit', t: b, head: h.head }; }
   for (const l of lawmen) if (l.alive) { const h = rayHitHuman(raycaster.ray, l, best.d); if (h) best = { d: h.along, kind: 'law', t: l, head: h.head }; }
   for (const n of npcs) if (n.alive) { const h = rayHitHuman(raycaster.ray, n, best.d); if (h) best = { d: h.along, kind: 'npc', t: n, head: h.head }; }
-  if (!best.point || best.kind === 'bandit' || best.kind === 'law' || best.kind === 'npc') best.point = from.clone().addScaledVector(dir, best.d);
+  for (const a of animals) if (a.alive) { const h = rayHitAnimal(raycaster.ray, a, best.d); if (h) best = { d: h.along, kind: 'animal', t: a, head: h.head }; }
+  if (!best.point || best.kind === 'bandit' || best.kind === 'law' || best.kind === 'npc' || best.kind === 'animal') best.point = from.clone().addScaledVector(dir, best.d);
 
   spawnTracer(hand, best.point);
   const scr = best.point.clone().project(camera);
@@ -2032,6 +2237,11 @@ function shoot() {
       toast('Você matou um homem da lei', `Recompensa pela sua cabeça: ${fmtMoney(G.wanted)}.`);
       reportCrime('law', l.x, l.z);
     } else showHitmark(false, sx, sy);
+  } else if (best.kind === 'animal') {
+    spawnPuff(best.point, 0x8a1010, 0.3, 0.45);
+    const killed = hitAnimal(best.t, best.head);
+    showHitmark(killed, sx, sy);
+    if (killed && best.head) toast('Tiro na cabeça!', 'Pele perfeita.', 'gold');
   } else if (best.kind === 'npc') {
     spawnPuff(best.point, 0x8a1010, 0.35, 0.5);
     killNPC(best.t); showHitmark(true, sx, sy);
@@ -2039,6 +2249,7 @@ function shoot() {
     spawnPuff(best.point, walls[0].object === groundRef ? 0xc8a878 : 0x9a7a58, 0.45, 0.5);
   }
   if (best.kind !== 'npc') for (const n of npcs) if (n.alive && Math.hypot(n.x - player.x, n.z - player.z) < 12 && Math.random() < 0.5) { say(n, pick(['Cuidado com isso!', 'Ei! Guarde essa arma!', 'Jesus!']), 2); n.flee = 3; }
+  scareAnimals(player.x, player.z, 70);
   if (G.ammo === 0 && G.reserve > 0) setTimeout(startReload, 350);
 }
 function startReload() {
@@ -2303,6 +2514,7 @@ function drawMinimap() {
   for (const l of lawmen) if (l.alive) { mctx.beginPath(); mctx.arc(wx(l.x), wz(l.z), 2.8, 0, 7); mctx.fill(); }
   mctx.fillStyle = '#e02020';
   for (const b of bandits) if (b.alive && b.alert) { mctx.beginPath(); mctx.arc(wx(b.x), wz(b.z), 2.5, 0, 7); mctx.fill(); }
+  for (const a of animals) { if (Math.hypot(a.x - A.x, a.z - A.z) > 75 || a.skinned) continue; mctx.fillStyle = !a.alive ? '#5a2a14' : a.hunting ? '#8a1010' : '#f4e6c4'; mctx.beginPath(); mctx.arc(wx(a.x), wz(a.z), 1.8, 0, 7); mctx.fill(); }
   mctx.fillStyle = '#c21d1d';
   const rb = bottles.some((b) => b.alive);
   if (rb) { mctx.beginPath(); mctx.arc(wx((RANGE_X0 + RANGE_X1) / 2), wz(RANGE_Z), 3, 0, 7); mctx.fill(); }
@@ -2351,6 +2563,7 @@ function frame() {
     updateNPCs(dt);
     updateBandits(dt);
     updateLaw(dt);
+    updateAnimals(dt);
     updateQuest();
     updateWorld(dt);
     updateEffects(dt);
@@ -2387,13 +2600,13 @@ const SAVE_KEY = 'pv3d-save-v1';
 function saveGame() {
   if (G.state !== 'play') return;
   const A = anchor();
-  store.set(SAVE_KEY, JSON.stringify({ v: 1, time: G.time, day: G.day, money: G.money, ammo: G.ammo, reserve: G.reserve, hat: G.hatColor, coat: G.coatColor, beard: G.beard, muted: G.muted, gotLetter: G.gotLetter, wanted: G.wanted, valuables: G.valuables, stats: G.stats, quest: G.quest, x: A.x, z: A.z }));
+  store.set(SAVE_KEY, JSON.stringify({ v: 1, time: G.time, day: G.day, money: G.money, ammo: G.ammo, reserve: G.reserve, hat: G.hatColor, coat: G.coatColor, beard: G.beard, muted: G.muted, gotLetter: G.gotLetter, wanted: G.wanted, valuables: G.valuables, pelts: G.pelts, stats: G.stats, quest: G.quest, x: A.x, z: A.z }));
 }
 function loadGame() {
   let d = null;
   try { d = JSON.parse(store.get(SAVE_KEY)); } catch (e) { d = null; }
   if (!d || d.v !== 1) return false;
-  Object.assign(G, { time: d.time, day: d.day, money: d.money, ammo: d.ammo, reserve: d.reserve, muted: !!d.muted, gotLetter: !!d.gotLetter, beard: d.beard !== false, wanted: d.wanted || 0, valuables: d.valuables || {} });
+  Object.assign(G, { time: d.time, day: d.day, money: d.money, ammo: d.ammo, reserve: d.reserve, muted: !!d.muted, gotLetter: !!d.gotLetter, beard: d.beard !== false, wanted: d.wanted || 0, valuables: d.valuables || {}, pelts: d.pelts || {} });
   if (d.stats) Object.assign(G.stats, d.stats, { gangStarted: d.stats.gangDone ? true : false, gangKilled: !!d.stats.gangDone });
   if (d.quest) G.quest = d.quest;
   // caçadas em andamento não são salvas: volta ao começo da missão correspondente
@@ -2499,4 +2712,4 @@ requestAnimationFrame(frame);
 buildReady();
 
 // Exposto para testes automatizados
-window.__pv3d = { G, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer, lootBody, lootable, lawmen, reportCrime, MISSIONS, updateQuest };
+window.__pv3d = { G, animals, ANIMALS, skinAnimal, player, horse, npcs, bottles, bandits, BUILDINGS, look, camera, scene, renderer, startGame, shoot, applyQuality, startBounty, banditShoot, hurtPlayer, lootBody, lootable, lawmen, reportCrime, MISSIONS, updateQuest };
